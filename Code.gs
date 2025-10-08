@@ -614,13 +614,15 @@ function EXA_SEARCH(query, numResults, searchType, prefix, suffix) {
 /**
  * Refreshes all selected cells containing Exa functions by forcing recalculation.
  * Processes all cells in parallel for optimal performance.
+ * Properly handles array-returning functions by clearing spilled values.
  * 
  * @param {string} operation The operation to perform (always 'refresh')
  * @return {Object} Result object with success flag and message
  */
 function processBatchOperation(operation) {
   try {
-    const selection = SpreadsheetApp.getActiveSheet().getActiveRange();
+    const sheet = SpreadsheetApp.getActiveSheet();
+    const selection = sheet.getActiveRange();
     
     if (!selection) {
       return { 
@@ -638,7 +640,9 @@ function processBatchOperation(operation) {
         if (formula && formula.toUpperCase().match(/^=EXA_/)) {
           exaCells.push({
             cell: selection.getCell(rowIndex + 1, colIndex + 1),
-            formula: formula
+            formula: formula,
+            row: selection.getRow() + rowIndex,
+            col: selection.getColumn() + colIndex
           });
         }
       });
@@ -653,8 +657,40 @@ function processBatchOperation(operation) {
       };
     }
     
-    // Clear all formulas at once
-    exaCells.forEach(item => item.cell.setFormula(''));
+    // For each Exa function cell, clear potential spilled values
+    exaCells.forEach(item => {
+      // Clear the formula cell
+      item.cell.setFormula('');
+      
+      // Clear potential spilled values below and to the right
+      // Array formulas can spill vertically (for EXA_SEARCH, EXA_FINDSIMILAR)
+      // We'll clear up to 100 rows below and 10 columns to the right to be safe
+      const maxRow = Math.min(item.row + 100, sheet.getMaxRows());
+      const maxCol = Math.min(item.col + 10, sheet.getMaxColumns());
+      
+      if (maxRow > item.row || maxCol > item.col) {
+        const numRows = maxRow - item.row + 1;
+        const numCols = maxCol - item.col + 1;
+        const spillRange = sheet.getRange(item.row, item.col, numRows, numCols);
+        
+        // Only clear cells that don't have formulas (these are spilled values)
+        const spillFormulas = spillRange.getFormulas();
+        const spillValues = spillRange.getValues();
+        
+        spillFormulas.forEach((formulaRow, rowIdx) => {
+          formulaRow.forEach((formula, colIdx) => {
+            // Skip the first cell (it's the formula cell we already cleared)
+            if (rowIdx === 0 && colIdx === 0) return;
+            
+            // If cell has no formula but has a value, it's likely a spilled value
+            if (!formula && spillValues[rowIdx][colIdx] !== '') {
+              sheet.getRange(item.row + rowIdx, item.col + colIdx).clear();
+            }
+          });
+        });
+      }
+    });
+    
     SpreadsheetApp.flush();
     
     // Restore all formulas at once
