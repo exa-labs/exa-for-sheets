@@ -373,27 +373,53 @@ function EXA_ANSWER(prompt, prefix, suffix, includeCitations) {
 }
 
 /**
- * Retrieves the text content of a given URL using the Exa /contents endpoint.
+ * Retrieves the text content from one or more URLs using the Exa /contents endpoint.
+ * Returns a vertical list of content when multiple URLs are provided.
  *
- * @param {string} url The full URL (including http/https) to fetch content from.
- * @return {string} The main text content of the URL or an error message.
+ * @param {string|string[][]} urls A single URL string or a range of cells containing URLs.
+ * @param {number} [numUrls=1] Optional. Maximum number of URLs to process from the input range (1-100). Defaults to 1.
+ * @return {string[][]|string} The text content as a vertical array (for multiple results) or single string (for one result), or an error message.
  * @customfunction
  */
-function EXA_CONTENTS(url) {
+function EXA_CONTENTS(urls, numUrls) {
   const apiKey = getApiKey();
-  if (!apiKey) return "No API key set. Please set your API key in the Exa AI sidebar.";
+  if (!apiKey) return [["No API key set. Please set your API key in the Exa AI sidebar."]];
 
-  // Basic URL validation
-  if (!url || typeof url !== 'string' || !url.startsWith('http')) {
-      return "Please provide a valid URL starting with http or https.";
+  // --- Parameter Processing ---
+  // Handle both single URL string and ranges of URLs
+  let urlArray = [];
+  
+  if (typeof urls === 'string') {
+    // Single URL provided
+    urlArray = [urls];
+  } else if (Array.isArray(urls)) {
+    // Range of cells provided - flatten and filter valid URLs
+    urlArray = urls.flat().filter(url => {
+      return url && typeof url === 'string' && url.trim() !== '' && url.startsWith('http');
+    });
+  } else {
+    return [["Please provide a valid URL or range of URLs starting with http or https."]];
   }
 
+  // Validate we have at least one URL
+  if (urlArray.length === 0) {
+    return [["Please provide at least one valid URL starting with http or https."]];
+  }
+
+  // Limit the number of URLs to process based on numUrls parameter
+  const maxUrls = (typeof numUrls === 'number' && numUrls >= 1 && numUrls <= 100) 
+                  ? Math.floor(numUrls) 
+                  : Math.min(urlArray.length, 1); // Default to 1 if not specified
+  
+  const urlsToFetch = urlArray.slice(0, maxUrls);
+
+  // --- API Call ---
   try {
     const response = UrlFetchApp.fetch("https://api.exa.ai/contents", {
       method: "post",
       contentType: "application/json",
-      payload: JSON.stringify({ urls: [url] }), // Exa's /contents endpoint expects an array of URLs
-      headers: { "x-api-key": apiKey }, // Corrected header based on Exa Docs
+      payload: JSON.stringify({ urls: urlsToFetch }), // Exa's /contents endpoint expects an array of URLs
+      headers: { "x-api-key": apiKey },
       muteHttpExceptions: true
     });
 
@@ -402,16 +428,25 @@ function EXA_CONTENTS(url) {
 
     if (responseCode === 200) {
         const result = JSON.parse(responseBody);
-        // The response structure for /contents typically wraps results in a 'results' array
-        const contentData = result.results && result.results[0];
-        if (contentData) {
-            // Prioritize text content based on Exa's common response structure
-            return (contentData.text || contentData.highlights || "No relevant content found in response.").trim();
+        
+        if (result && result.results && result.results.length > 0) {
+          // Map all results to a 2D array for vertical spill
+          const contentResults = result.results.map(contentData => {
+            if (contentData) {
+              // Prioritize text content based on Exa's common response structure
+              const content = (contentData.text || contentData.highlights || "No content found").trim();
+              return [content];
+            } else {
+              return ["No content data found"];
+            }
+          });
+          
+          return contentResults;
         } else {
-            return "API returned successfully, but no content data found for this URL.";
+          return [["API returned successfully, but no content data found for the provided URL(s)."]];
         }
     } else if (responseCode === 401) {
-        return "API Error: Invalid API Key. Please check your key in the menu.";
+        return [["API Error: Invalid API Key. Please check your key in the menu."]];
     } else {
         // Try to parse error message from API if possible, otherwise return generic error
         let errorMessage = `API Error: Received status code ${responseCode}.`;
@@ -421,10 +456,11 @@ function EXA_CONTENTS(url) {
         } catch (e) {
             errorMessage += ` Response: ${responseBody}`;
         }
-        return errorMessage;
+        return [[errorMessage]];
     }
   } catch (e) {
-    return `Script Error: ${e.message}`;
+    Logger.log(`EXA_CONTENTS Error: ${e} for URLs: ${JSON.stringify(urlsToFetch)}`);
+    return [[`Script Error: ${e.message}`]];
   }
 }
 

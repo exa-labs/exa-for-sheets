@@ -9,7 +9,7 @@ This Google Apps Script integration brings the power of the Exa API directly int
 ### Custom Sheet Functions
 * **EXA_ANSWER:** Query the Exa AI to get answers to questions based on web search results
 * **EXA_SEARCH:** Search the web and retrieve a list of relevant URLs
-* **EXA_CONTENTS:** Extract the text content from specific URLs
+* **EXA_CONTENTS:** Extract the text content from one or more URLs
 * **EXA_FINDSIMILAR:** Find URLs similar to a provided reference URL
 
 ### Sidebar Interface
@@ -82,12 +82,13 @@ Searches the web and returns a vertical list of URLs.
 
 ### EXA_CONTENTS
 ```
-=EXA_CONTENTS(url)
+=EXA_CONTENTS(urls, [numUrls])
 ```
-Retrieves the text content from a specified URL.
+Retrieves the text content from one or more URLs. Returns a vertical list when multiple URLs are provided.
 
 **Parameters:**
-* `url` (required): The full URL to extract content from (must start with http/https)
+* `urls` (required): A single URL string or a range of cells containing URLs (must start with http/https)
+* `numUrls` (optional): Maximum number of URLs to process from the input range (1-100, Default: 1)
 
 ### EXA_FINDSIMILAR
 ```

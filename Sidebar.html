@@ -384,10 +384,11 @@
 
       <div class="doc-section">
         <h4>EXA_CONTENTS</h4>
-        <p>Retrieves the text content of a given URL using Exa /contents.</p>
+        <p>Retrieves the text content from one or more URLs using Exa /contents. Returns a vertical list when multiple URLs are provided.</p>
         <p><strong>Parameters:</strong></p>
-        <p><code>url</code> (string, required): The full URL (starting with http/https).</p>
-        <p><strong>Returns:</strong> The main text content of the URL.</p>
+        <p><code>urls</code> (string or range, required): A single URL string or a range of cells containing URLs (starting with http/https).</p>
+        <p><code>numUrls</code> (number, optional): Max number of URLs to process (1-100). Defaults to 1.</p>
+        <p><strong>Returns:</strong> A vertical list of text content from the provided URLs.</p>
       </div>
 
       <div class="doc-section">
