@@ -147,3 +147,8 @@ To use batch refresh:
    ```bash
    npm run push
    ```
+
+5. Open the project in the Apps Script editor:
+   ```bash
+   npm run open
+   ```
