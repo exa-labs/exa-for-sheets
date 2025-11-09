@@ -458,33 +458,57 @@
         }
 
         saveButton.disabled = true;
-        statusText.textContent = 'Saving...';
+        statusText.textContent = 'Authorizing...';
         statusDiv.style.display = 'block';
 
+        // First ensure authorization (this triggers OAuth consent if needed)
         google.script.run
-          .withSuccessHandler((result) => {
-            if (result.success) {
-              // Clear form inputs
-              apiKeyInput.value = '';
-              
-              // Show success message
-              statusText.textContent = `${result.message}`;
-              
-              // Refresh the API key display
-              loadApiKey();
-            } else {
-              // Show error message
-              statusText.textContent = `${result.message}`;
-            }
-            saveButton.disabled = false;
+          .withSuccessHandler(() => {
+            // Authorization successful, now save the key
+            statusText.textContent = 'Saving...';
+            
+            google.script.run
+              .withSuccessHandler((result) => {
+                if (result.success) {
+                  // Clear form inputs
+                  apiKeyInput.value = '';
+                  
+                  // Show success message
+                  statusText.textContent = `${result.message}`;
+                  
+                  // Refresh the API key display
+                  loadApiKey();
+                } else {
+                  // Show error message
+                  statusText.textContent = `${result.message}`;
+                }
+                saveButton.disabled = false;
+              })
+              .withFailureHandler((error) => {
+                handleAuthError(error);
+                saveButton.disabled = false;
+              })
+              .saveApiKey(key);
           })
           .withFailureHandler((error) => {
-            statusText.textContent = `Error: ${error.message || error}`;
-            statusDiv.style.display = 'block';
-            console.error("Save API Key Error:", error);
+            handleAuthError(error);
             saveButton.disabled = false;
           })
-          .saveApiKey(key);
+          .ensureAuthorized();
+      }
+      
+      // Handle authorization errors with helpful messages
+      function handleAuthError(error) {
+        const errorMsg = error.message || error.toString();
+        
+        if (errorMsg.includes('Authorization') || errorMsg.includes('Authorisation')) {
+          statusText.textContent = 'Authorization required: Please allow pop-ups for docs.google.com and script.google.com in your browser, then try again.';
+        } else {
+          statusText.textContent = `Error: ${errorMsg}`;
+        }
+        
+        statusDiv.style.display = 'block';
+        console.error("Authorization/Save Error:", error);
       }
       
       // Remove API key
@@ -540,7 +564,7 @@
         }
       }
       
-      // Load and display API key
+      // Load and display API key (should only be called after authorization is confirmed)
       function loadApiKey() {
         google.script.run
           .withSuccessHandler((keyData) => {
@@ -567,10 +591,40 @@
           })
           .withFailureHandler((error) => {
             console.error("Load API Key Error:", error);
-            statusText.textContent = `Error loading API key: ${error.message || error}`;
+            const errorMsg = error.message || error.toString();
+            
+            if (errorMsg.includes('Authorization') || errorMsg.includes('Authorisation')) {
+              statusText.textContent = 'Authorization required: Please allow pop-ups for docs.google.com and script.google.com in your browser, then save your API key.';
+            } else {
+              statusText.textContent = `Error loading API key: ${errorMsg}`;
+            }
             statusDiv.style.display = 'block';
           })
           .getApiKeyForUI();
+      }
+      
+      // Try to load API key on first interaction (this will trigger auth if needed)
+      function initializeApiKeyDisplay() {
+        google.script.run
+          .withSuccessHandler(() => {
+            // Authorization successful, load the key
+            loadApiKey();
+          })
+          .withFailureHandler((error) => {
+            // If authorization fails, just show the default "add key" UI
+            // The user will get proper auth flow when they click Save
+            console.log("Initial auth check:", error);
+            const keyDisplaySection = document.getElementById('keyDisplaySection');
+            const addKeySection = document.getElementById('addKeySection');
+            const apiKeyStatus = document.getElementById('apiKeyStatus');
+            const apiKeyStatusText = document.getElementById('apiKeyStatusText');
+            
+            keyDisplaySection.style.display = 'none';
+            addKeySection.style.display = 'block';
+            apiKeyStatus.style.display = 'block';
+            apiKeyStatusText.textContent = 'No API key set. Add a key to get started.';
+          })
+          .ensureAuthorized();
       }
       
       apiKeyInput.addEventListener('keypress', function(event) {
@@ -580,9 +634,9 @@
         }
       });
       
-      // Load API key when the tab is shown
+      // Initialize the API key display on page load
       document.addEventListener('DOMContentLoaded', () => {
-        loadApiKey();
+        initializeApiKeyDisplay();
       });
 
       // --- Batch Operations Logic ---

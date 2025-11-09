@@ -268,6 +268,17 @@ function getApiKeyForUI() {
 }
 
 /**
+ * Ensures the user has authorized the add-on by touching PropertiesService.
+ * This should be called on a user gesture (button click) to ensure the OAuth
+ * consent flow can display properly without being blocked by pop-up blockers.
+ * @return {boolean} Always returns true if authorization succeeds
+ */
+function ensureAuthorized() {
+  PropertiesService.getUserProperties().getProperty('EXA_API_KEYS');
+  return true;
+}
+
+/**
  * Queries the Exa /answer endpoint to provide an AI-generated answer based on search results.
  * Allows adding prefix/suffix text and optionally includes source citations.
  * By default, extracts and returns only the core answer text before any inline citations like " ([Source](URL)...)".
