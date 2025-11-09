@@ -461,6 +461,9 @@
         statusText.textContent = 'Authorizing...';
         statusDiv.style.display = 'block';
 
+        // Generate request ID for correlation
+        const reqId = (crypto && crypto.randomUUID) ? crypto.randomUUID() : null;
+
         // First ensure authorization (this triggers OAuth consent if needed)
         google.script.run
           .withSuccessHandler(() => {
@@ -475,40 +478,56 @@
                   
                   // Show success message
                   statusText.textContent = `${result.message}`;
+                  statusDiv.classList.remove('error');
+                  statusDiv.classList.add('success');
                   
                   // Refresh the API key display
                   loadApiKey();
                 } else {
-                  // Show error message
-                  statusText.textContent = `${result.message}`;
+                  // Show structured error
+                  renderStructuredError(result);
                 }
                 saveButton.disabled = false;
               })
               .withFailureHandler((error) => {
-                handleAuthError(error);
+                handleTransportAuthFailure(error);
                 saveButton.disabled = false;
               })
-              .saveApiKey(key);
+              .saveApiKey(key, reqId);
           })
           .withFailureHandler((error) => {
-            handleAuthError(error);
+            handleTransportAuthFailure(error);
             saveButton.disabled = false;
           })
           .ensureAuthorized();
       }
       
-      // Handle authorization errors with helpful messages
-      function handleAuthError(error) {
-        const errorMsg = error.message || error.toString();
+      // Render structured error responses from server
+      function renderStructuredError(result) {
+        const ref = result.correlationId ? ` [ref: ${result.correlationId}]` : '';
+        statusText.textContent = `Error (${result.code}): ${result.message}${ref}`;
+        statusDiv.classList.remove('success');
+        statusDiv.classList.add('error');
+        statusDiv.style.display = 'block';
+        console.error('saveApiKey error:', result);
+      }
+      
+      // Handle transport/authorization failures (OAuth popup blocked, etc.)
+      function handleTransportAuthFailure(error) {
+        const errorMsg = (error && (error.message || error.toString())) || '';
         
         if (errorMsg.includes('Authorization') || errorMsg.includes('Authorisation')) {
           statusText.textContent = 'Authorization required: Please allow pop-ups for docs.google.com and script.google.com in your browser, then try again.';
+        } else if (errorMsg.includes('The script has not been authorized') || errorMsg.includes('Access not granted')) {
+          statusText.textContent = 'Access not granted. Please authorize the add-on when prompted.';
         } else {
-          statusText.textContent = `Error: ${errorMsg}`;
+          statusText.textContent = `Request failed: ${errorMsg}`;
         }
         
+        statusDiv.classList.remove('success');
+        statusDiv.classList.add('error');
         statusDiv.style.display = 'block';
-        console.error("Authorization/Save Error:", error);
+        console.error('Transport/Auth failure:', error);
       }
       
       // Remove API key
