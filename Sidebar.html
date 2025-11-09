@@ -514,16 +514,22 @@
       
       // Handle transport/authorization failures (OAuth popup blocked, etc.)
       function handleTransportAuthFailure(error) {
-        const errorMsg = (error && (error.message || error.toString())) || '';
-        
-        if (errorMsg.includes('Authorization') || errorMsg.includes('Authorisation')) {
-          statusText.textContent = 'Authorization required: Please allow pop-ups for docs.google.com and script.google.com in your browser, then try again.';
-        } else if (errorMsg.includes('The script has not been authorized') || errorMsg.includes('Access not granted')) {
-          statusText.textContent = 'Access not granted. Please authorize the add-on when prompted.';
+        const errorMsg = (error && (error.message || error.toString())) || 'Unknown error';
+
+        // Check for multi-account authorization issue (Google's 4-year-old bug)
+        if (errorMsg.includes('Authorization') || errorMsg.includes('Authorisation') ||
+            errorMsg.includes('authorisation is required') || errorMsg.includes('authorization is required')) {
+          statusText.innerHTML = `<strong>Authorization Error:</strong> This is likely due to multiple Google accounts being logged in.<br><br>
+            <strong>To fix:</strong><br>
+            1. Sign out of all Google accounts except the one you're using this sheet with<br>
+            2. Or use an incognito window with only one account<br>
+            3. Or make sure your default Google account matches the account for this sheet<br><br>
+            <a href="https://developers.google.com/apps-script/guides/projects#fix_issues_with_multiple_google_accounts" target="_blank">Learn more about fixing multi-account issues</a><br><br>
+            <em>Technical error: ${errorMsg}</em>`;
         } else {
-          statusText.textContent = `Request failed: ${errorMsg}`;
+          statusText.textContent = `Error: ${errorMsg}`;
         }
-        
+
         statusDiv.classList.remove('success');
         statusDiv.classList.add('error');
         statusDiv.style.display = 'block';
@@ -611,9 +617,17 @@
           .withFailureHandler((error) => {
             console.error("Load API Key Error:", error);
             const errorMsg = error.message || error.toString();
-            
-            if (errorMsg.includes('Authorization') || errorMsg.includes('Authorisation')) {
-              statusText.textContent = 'Authorization required: Please allow pop-ups for docs.google.com and script.google.com in your browser, then save your API key.';
+
+            // Check for multi-account authorization issue
+            if (errorMsg.includes('Authorization') || errorMsg.includes('Authorisation') ||
+                errorMsg.includes('authorisation is required') || errorMsg.includes('authorization is required')) {
+              statusText.innerHTML = `<strong>Authorization Error:</strong> This is likely due to multiple Google accounts being logged in.<br><br>
+                <strong>To fix:</strong><br>
+                1. Sign out of all Google accounts except the one you're using this sheet with<br>
+                2. Or use an incognito window with only one account<br>
+                3. Or make sure your default Google account matches the account for this sheet<br><br>
+                <a href="https://developers.google.com/apps-script/guides/projects#fix_issues_with_multiple_google_accounts" target="_blank">Learn more about fixing multi-account issues</a><br><br>
+                <em>Technical error: ${errorMsg}</em>`;
             } else {
               statusText.textContent = `Error loading API key: ${errorMsg}`;
             }
