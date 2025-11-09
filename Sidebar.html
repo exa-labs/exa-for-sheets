@@ -603,28 +603,20 @@
           .getApiKeyForUI();
       }
       
-      // Try to load API key on first interaction (this will trigger auth if needed)
+      // Initialize the UI without making any privileged server calls
+      // This avoids triggering OAuth consent pop-ups that browsers may block
       function initializeApiKeyDisplay() {
-        google.script.run
-          .withSuccessHandler(() => {
-            // Authorization successful, load the key
-            loadApiKey();
-          })
-          .withFailureHandler((error) => {
-            // If authorization fails, just show the default "add key" UI
-            // The user will get proper auth flow when they click Save
-            console.log("Initial auth check:", error);
-            const keyDisplaySection = document.getElementById('keyDisplaySection');
-            const addKeySection = document.getElementById('addKeySection');
-            const apiKeyStatus = document.getElementById('apiKeyStatus');
-            const apiKeyStatusText = document.getElementById('apiKeyStatusText');
-            
-            keyDisplaySection.style.display = 'none';
-            addKeySection.style.display = 'block';
-            apiKeyStatus.style.display = 'block';
-            apiKeyStatusText.textContent = 'No API key set. Add a key to get started.';
-          })
-          .ensureAuthorized();
+        const keyDisplaySection = document.getElementById('keyDisplaySection');
+        const addKeySection = document.getElementById('addKeySection');
+        const apiKeyStatus = document.getElementById('apiKeyStatus');
+        const apiKeyStatusText = document.getElementById('apiKeyStatusText');
+        
+        // Show the default "add key" UI
+        // Authorization will happen when the user clicks Save
+        keyDisplaySection.style.display = 'none';
+        addKeySection.style.display = 'block';
+        apiKeyStatus.style.display = 'block';
+        apiKeyStatusText.textContent = 'No API key set. Add a key to get started.';
       }
       
       apiKeyInput.addEventListener('keypress', function(event) {
@@ -634,7 +626,7 @@
         }
       });
       
-      // Initialize the API key display on page load
+      // Initialize the API key display on page load (no server calls)
       document.addEventListener('DOMContentLoaded', () => {
         initializeApiKeyDisplay();
       });
