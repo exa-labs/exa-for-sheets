@@ -57,44 +57,114 @@ function saveAllApiKeys(keysData) {
 }
 
 /**
+ * Helper function to create structured error responses
+ * @param {string} code Error code for categorization
+ * @param {string} message User-friendly error message
+ * @param {string} correlationId Unique ID for tracking this request in logs
+ * @param {Object} details Optional additional error details
+ * @return {Object} Structured error response
+ */
+function fail(code, message, correlationId, details) {
+  return { 
+    success: false, 
+    code: code,
+    message: message,
+    correlationId: correlationId,
+    details: details || null
+  };
+}
+
+/**
  * Saves a new API key (simplified version for the new UI)
  * @param {string} key The Exa API key to save
- * @return {Object} Status object with success flag and message
+ * @param {string} reqId Optional request ID from client for correlation
+ * @return {Object} Status object with success flag, message, and correlation ID
  */
-function saveApiKey(key) {
-  if (!key) {
-    return { 
-      success: false, 
-      message: 'API key is required.'
+function saveApiKey(key, reqId) {
+  const correlationId = reqId || Utilities.getUuid();
+  
+  try {
+    // Validate input
+    if (!key || typeof key !== 'string' || !key.trim()) {
+      console.error(JSON.stringify({
+        correlationId: correlationId,
+        where: 'saveApiKey',
+        code: 'VALIDATION_EMPTY_KEY',
+        error: 'Empty or invalid API key provided'
+      }));
+      return fail('VALIDATION_EMPTY_KEY', 'API key is required.', correlationId);
+    }
+    
+    // Use a default name since we're managing a single key
+    const name = "default";
+    
+    // Get all existing keys
+    const keysData = getAllApiKeys();
+    
+    // Add or update the key with metadata
+    const now = new Date().toISOString();
+    keysData.keys[name] = {
+      key: key,  // Store the actual API key
+      created: keysData.keys[name] ? keysData.keys[name].created : now, // Keep original created date if updating
+      lastUsed: now,
+      // First few and last few characters for display, rest is masked with more dots
+      displayKey: `${key.substring(0, 4)}${'.'.repeat(15)}${key.substring(key.length - 4)}`
     };
+    
+    // Set as active key
+    keysData.activeKeyName = name;
+    
+    // Save back to properties with error handling
+    try {
+      saveAllApiKeys(keysData);
+    } catch (e) {
+      const errorMsg = String(e);
+      const errorStack = e.stack || '';
+      
+      // Detect specific storage errors
+      let code = 'STORAGE_WRITE_FAILED';
+      let userMessage = 'Failed to save API key. Please try again.';
+      
+      if (errorMsg.includes('Service invoked too many times')) {
+        code = 'STORAGE_RATE_LIMIT';
+        userMessage = 'Too many requests. Please wait a moment and try again.';
+      } else if (errorMsg.includes('exceeded maximum size')) {
+        code = 'STORAGE_SIZE_EXCEEDED';
+        userMessage = 'Storage limit exceeded. Please contact support.';
+      }
+      
+      console.error(JSON.stringify({
+        correlationId: correlationId,
+        where: 'saveApiKey',
+        code: code,
+        error: errorMsg,
+        stack: errorStack
+      }));
+      
+      return fail(code, userMessage, correlationId);
+    }
+    
+    return { 
+      success: true, 
+      message: 'API key saved successfully.',
+      correlationId: correlationId
+    };
+    
+  } catch (e) {
+    // Catch any unexpected errors
+    const errorMsg = String(e);
+    const errorStack = e.stack || '';
+    
+    console.error(JSON.stringify({
+      correlationId: correlationId,
+      where: 'saveApiKey',
+      code: 'INTERNAL',
+      error: errorMsg,
+      stack: errorStack
+    }));
+    
+    return fail('INTERNAL', 'Unexpected error while saving API key.', correlationId);
   }
-  
-  // Use a default name since we're managing a single key
-  const name = "default";
-  
-  // Get all existing keys
-  const keysData = getAllApiKeys();
-  
-  // Add or update the key with metadata
-  const now = new Date().toISOString();
-  keysData.keys[name] = {
-    key: key,  // Store the actual API key
-    created: keysData.keys[name] ? keysData.keys[name].created : now, // Keep original created date if updating
-    lastUsed: now,
-    // First few and last few characters for display, rest is masked with more dots
-    displayKey: `${key.substring(0, 4)}${'.'.repeat(15)}${key.substring(key.length - 4)}`
-  };
-  
-  // Set as active key
-  keysData.activeKeyName = name;
-  
-  // Save back to properties
-  saveAllApiKeys(keysData);
-  
-  return { 
-    success: true, 
-    message: 'API key saved successfully.'
-  };
 }
 
 /**
@@ -265,6 +335,17 @@ function getApiKeyForUI() {
     displayKey: activeKey.displayKey,
     created: activeKey.created
   };
+}
+
+/**
+ * Ensures the user has authorized the add-on by touching PropertiesService.
+ * This should be called on a user gesture (button click) to ensure the OAuth
+ * consent flow can display properly without being blocked by pop-up blockers.
+ * @return {boolean} Always returns true if authorization succeeds
+ */
+function ensureAuthorized() {
+  PropertiesService.getUserProperties().getProperty('EXA_API_KEYS');
+  return true;
 }
 
 /**
