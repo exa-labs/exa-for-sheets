@@ -309,9 +309,82 @@
         margin-bottom: 0;
       }
 
+      /* Multi-account warning banner styles */
+      .multi-account-banner {
+        display: none;
+        background-color: #FEF2F2;
+        border: 2px solid #DC2626;
+        border-radius: 8px;
+        padding: 16px;
+        margin: 15px;
+        color: #7F1D1D;
+      }
+
+      .multi-account-banner.visible {
+        display: block;
+      }
+
+      .multi-account-banner h4 {
+        margin: 0 0 10px 0;
+        color: #DC2626;
+        font-size: 1.1em;
+        font-weight: 600;
+      }
+
+      .multi-account-banner p {
+        margin: 8px 0;
+        line-height: 1.5;
+        font-size: 0.9em;
+      }
+
+      .multi-account-banner strong {
+        color: #991B1B;
+      }
+
+      .multi-account-banner ol {
+        margin: 10px 0;
+        padding-left: 20px;
+      }
+
+      .multi-account-banner li {
+        margin: 5px 0;
+        line-height: 1.4;
+      }
+
+      .multi-account-banner a {
+        color: #DC2626;
+        font-weight: 600;
+        text-decoration: underline;
+      }
+
+      .multi-account-banner .technical-details {
+        margin-top: 12px;
+        padding-top: 12px;
+        border-top: 1px solid #FCA5A5;
+        font-size: 0.8em;
+        color: #991B1B;
+        font-style: italic;
+      }
+
     </style>
   </head>
   <body>
+
+    <!-- Multi-account warning banner (hidden by default, shown when auth issues detected) -->
+    <div id="multiAccountBanner" class="multi-account-banner">
+      <h4>⚠️ Multiple Google Accounts Detected</h4>
+      <p><strong>Your API key cannot be saved or loaded because you're logged into multiple Google accounts.</strong></p>
+      <p><strong>To fix this issue, choose one of these options:</strong></p>
+      <ol>
+        <li><strong>Sign out of all Google accounts except the one you're using for this sheet</strong></li>
+        <li><strong>Use an incognito/private window with only one Google account</strong></li>
+        <li><strong>Make sure your default Google account matches the account for this sheet</strong></li>
+      </ol>
+      <p>
+        <a href="https://developers.google.com/apps-script/guides/projects#fix_issues_with_multiple_google_accounts" target="_blank">Learn more about fixing multi-account issues →</a>
+      </p>
+      <div class="technical-details" id="technicalDetails"></div>
+    </div>
 
     <div class="tab-container">
       <button class="tab-button active" onclick="openTab(event, 'apiKeyTab')">API Key</button>
@@ -473,6 +546,9 @@
             google.script.run
               .withSuccessHandler((result) => {
                 if (result.success) {
+                  // Hide multi-account banner on successful save
+                  hideMultiAccountBanner();
+                  
                   // Clear form inputs
                   apiKeyInput.value = '';
                   
@@ -502,6 +578,32 @@
           .ensureAuthorized();
       }
       
+      // Show the prominent multi-account warning banner
+      function showMultiAccountBanner(errorMsg) {
+        const banner = document.getElementById('multiAccountBanner');
+        const technicalDetails = document.getElementById('technicalDetails');
+        
+        banner.classList.add('visible');
+        technicalDetails.textContent = `Technical error: ${errorMsg}`;
+        
+        // Scroll to top to ensure banner is visible
+        window.scrollTo(0, 0);
+      }
+      
+      // Hide the multi-account warning banner
+      function hideMultiAccountBanner() {
+        const banner = document.getElementById('multiAccountBanner');
+        banner.classList.remove('visible');
+      }
+      
+      // Check if an error is related to multi-account issues
+      function isMultiAccountError(errorMsg) {
+        return errorMsg.includes('Authorization') || 
+               errorMsg.includes('Authorisation') ||
+               errorMsg.includes('authorisation is required') || 
+               errorMsg.includes('authorization is required');
+      }
+      
       // Render structured error responses from server
       function renderStructuredError(result) {
         const ref = result.correlationId ? ` [ref: ${result.correlationId}]` : '';
@@ -517,15 +619,12 @@
         const errorMsg = (error && (error.message || error.toString())) || 'Unknown error';
 
         // Check for multi-account authorization issue (Google's 4-year-old bug)
-        if (errorMsg.includes('Authorization') || errorMsg.includes('Authorisation') ||
-            errorMsg.includes('authorisation is required') || errorMsg.includes('authorization is required')) {
-          statusText.innerHTML = `<strong>Authorization Error:</strong> This is likely due to multiple Google accounts being logged in.<br><br>
-            <strong>To fix:</strong><br>
-            1. Sign out of all Google accounts except the one you're using this sheet with<br>
-            2. Or use an incognito window with only one account<br>
-            3. Or make sure your default Google account matches the account for this sheet<br><br>
-            <a href="https://developers.google.com/apps-script/guides/projects#fix_issues_with_multiple_google_accounts" target="_blank">Learn more about fixing multi-account issues</a><br><br>
-            <em>Technical error: ${errorMsg}</em>`;
+        if (isMultiAccountError(errorMsg)) {
+          // Show the prominent banner at the top
+          showMultiAccountBanner(errorMsg);
+          
+          // Also show error in status div for context
+          statusText.innerHTML = `<strong>Authorization Error:</strong> Multiple Google accounts detected. See the warning above for instructions.`;
         } else {
           statusText.textContent = `Error: ${errorMsg}`;
         }
@@ -598,6 +697,9 @@
             const apiKeyStatus = document.getElementById('apiKeyStatus');
             const apiKeyStatusText = document.getElementById('apiKeyStatusText');
             
+            // Hide banner on successful load
+            hideMultiAccountBanner();
+            
             if (keyData) {
               // Key exists - show display section, hide add section and status
               keyDisplaySection.style.display = 'block';
@@ -619,15 +721,12 @@
             const errorMsg = error.message || error.toString();
 
             // Check for multi-account authorization issue
-            if (errorMsg.includes('Authorization') || errorMsg.includes('Authorisation') ||
-                errorMsg.includes('authorisation is required') || errorMsg.includes('authorization is required')) {
-              statusText.innerHTML = `<strong>Authorization Error:</strong> This is likely due to multiple Google accounts being logged in.<br><br>
-                <strong>To fix:</strong><br>
-                1. Sign out of all Google accounts except the one you're using this sheet with<br>
-                2. Or use an incognito window with only one account<br>
-                3. Or make sure your default Google account matches the account for this sheet<br><br>
-                <a href="https://developers.google.com/apps-script/guides/projects#fix_issues_with_multiple_google_accounts" target="_blank">Learn more about fixing multi-account issues</a><br><br>
-                <em>Technical error: ${errorMsg}</em>`;
+            if (isMultiAccountError(errorMsg)) {
+              // Show the prominent banner at the top
+              showMultiAccountBanner(errorMsg);
+              
+              // Also show error in status div for context
+              statusText.innerHTML = `<strong>Authorization Error:</strong> Multiple Google accounts detected. See the warning above for instructions.`;
             } else {
               statusText.textContent = `Error loading API key: ${errorMsg}`;
             }
@@ -636,20 +735,12 @@
           .getApiKeyForUI();
       }
       
-      // Initialize the UI without making any privileged server calls
-      // This avoids triggering OAuth consent pop-ups that browsers may block
+      // Initialize the UI by attempting to load the API key
+      // This will proactively detect multi-account issues and show the warning banner
       function initializeApiKeyDisplay() {
-        const keyDisplaySection = document.getElementById('keyDisplaySection');
-        const addKeySection = document.getElementById('addKeySection');
-        const apiKeyStatus = document.getElementById('apiKeyStatus');
-        const apiKeyStatusText = document.getElementById('apiKeyStatusText');
-        
-        // Show the default "add key" UI
-        // Authorization will happen when the user clicks Save
-        keyDisplaySection.style.display = 'none';
-        addKeySection.style.display = 'block';
-        apiKeyStatus.style.display = 'block';
-        apiKeyStatusText.textContent = 'No API key set. Add a key to get started.';
+        // Attempt to load the API key, which will trigger the multi-account banner if needed
+        // This is better than waiting for users to try saving a key first
+        loadApiKey();
       }
       
       apiKeyInput.addEventListener('keypress', function(event) {
