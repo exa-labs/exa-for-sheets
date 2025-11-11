@@ -366,6 +366,29 @@
         font-style: italic;
       }
 
+      /* Static multi-account warning styles */
+      .multi-account-warning {
+        background-color: #FEF9C3;
+        border: 1px solid #EAB308;
+        border-left: 4px solid #EAB308;
+        border-radius: 6px;
+        padding: 12px;
+        margin-bottom: 20px;
+        font-size: 0.85em;
+        color: #713F12;
+      }
+
+      .multi-account-warning strong {
+        color: #854D0E;
+        font-weight: 600;
+      }
+
+      .multi-account-warning a {
+        color: #CA8A04;
+        text-decoration: underline;
+        font-weight: 500;
+      }
+
     </style>
   </head>
   <body>
@@ -395,6 +418,11 @@
     <!-- API Key Tab -->
     <div id="apiKeyTab" class="tab-content active">
       <h3>API Key</h3>
+      
+      <!-- Static multi-account warning -->
+      <div class="multi-account-warning">
+        <strong>⚠️ Note:</strong> If you're logged into multiple Google accounts, you may experience issues saving or loading your API key. If this happens, try using an incognito window with only one account or sign out of extra accounts. <a href="https://developers.google.com/apps-script/guides/projects#fix_issues_with_multiple_google_accounts" target="_blank">Learn more</a>
+      </div>
       
       <!-- Key Display Section -->
       <div id="keyDisplaySection" class="key-section" style="display: none;">
