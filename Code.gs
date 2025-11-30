@@ -349,27 +349,6 @@ function ensureAuthorized() {
 }
 
 /**
- * Strips footnote markers from text.
- * Handles patterns like [^1](<url|url>), [^1](url), and standalone ^1, ^2, etc.
- * @param {string} text The text to strip footnotes from
- * @return {string} Text with footnotes removed
- */
-function stripFootnotes(text) {
-  if (!text || typeof text !== 'string') return text;
-  
-  // Remove markdown footnote links: [^1](<url|url>) or [^1](url)
-  let result = text.replace(/\s*\[\^(\d+)\]\([^)]*\)/g, '');
-  
-  // Remove standalone footnote markers: ^1, ^2, etc. (with optional preceding space)
-  result = result.replace(/\s*\^(\d+)/g, '');
-  
-  // Clean up any double spaces left behind
-  result = result.replace(/\s{2,}/g, ' ');
-  
-  return result.trim();
-}
-
-/**
  * Queries the Exa /answer endpoint to provide an AI-generated answer based on search results.
  * Allows adding prefix/suffix text and optionally includes source citations.
  * By default, extracts and returns only the core answer text before any inline citations like " ([Source](URL)...)".
@@ -451,7 +430,7 @@ function EXA_ANSWER(prompt, prefix, suffix, includeCitations) {
            // If includeCitations is true but no citations array, finalOutput remains the fullAnswerFromApi
         }
 
-        return stripFootnotes(finalOutput); // Return the processed output with footnotes stripped
+        return finalOutput.trim(); // Return the processed output
 
       } else {
         return "API returned a valid response, but no 'answer' field (string) was found.";
