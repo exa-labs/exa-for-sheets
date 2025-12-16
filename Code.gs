@@ -379,7 +379,7 @@ function EXA_ANSWER(prompt, prefix, suffix, includeCitations) {
       method: "post",
       contentType: "application/json",
       payload: JSON.stringify({ query: finalPrompt }),
-      headers: { "x-api-key": apiKey },
+      headers: { "x-api-key": apiKey, "x-exa-integration": "exa-for-sheets" },
       muteHttpExceptions: true
     });
 
@@ -395,18 +395,16 @@ function EXA_ANSWER(prompt, prefix, suffix, includeCitations) {
         let finalOutput = fullAnswerFromApi; // Default to the full answer
 
         if (!shouldShowFullAnswerWithCitations) {
-          // --- Default Behavior: Extract Core Answer ---
-          // Find the start of the citation block pattern " (["
-          const citationStartIndex = fullAnswerFromApi.indexOf(" ([");
+          // --- Default Behavior: Strip Inline Citations ---
+          // Remove inline citation patterns like " ([Source](URL))" or " ([Source](URL), [Source2](URL2))"
+          // This regex matches citations in the format: space followed by opening paren, bracket, content, closing bracket, paren
+          // It handles multiple consecutive citations separated by commas
+          finalOutput = fullAnswerFromApi.replace(/\s+\(\[([^\]]+)\]\([^\)]+\)(?:,\s*\[([^\]]+)\]\([^\)]+\))*\)/g, '').trim();
 
-          if (citationStartIndex !== -1) {
-            // If the pattern is found, extract the text before it
-            finalOutput = fullAnswerFromApi.substring(0, citationStartIndex).trim();
-          } else {
-            // If the pattern isn't found, assume no inline citations; use the full answer
+          // If no inline citations were found, use the full answer
+          if (finalOutput === '') {
             finalOutput = fullAnswerFromApi.trim();
           }
-          // Now finalOutput contains only the core answer part (hopefully)
 
         } else {
           // --- Include Citations Behavior ---
@@ -474,7 +472,7 @@ function EXA_CONTENTS(url) {
       method: "post",
       contentType: "application/json",
       payload: JSON.stringify({ urls: [url] }), // Exa's /contents endpoint expects an array of URLs
-      headers: { "x-api-key": apiKey }, // Corrected header based on Exa Docs
+      headers: { "x-api-key": apiKey, "x-exa-integration": "exa-for-sheets" }, // Corrected header based on Exa Docs
       muteHttpExceptions: true
     });
 
@@ -580,7 +578,7 @@ function EXA_FINDSIMILAR(url, numResults, includeDomainsStr, excludeDomainsStr, 
       method: "post",
       contentType: "application/json",
       payload: JSON.stringify(payload),
-      headers: { "x-api-key": apiKey },
+      headers: { "x-api-key": apiKey, "x-exa-integration": "exa-for-sheets" },
       muteHttpExceptions: true
     });
 
@@ -660,7 +658,7 @@ function EXA_SEARCH(query, numResults, searchType, prefix, suffix) {
         type: type,
         useAutoprompt: (type !== 'keyword') // Enable autoprompt for neural/auto by default
       }),
-      headers: { "x-api-key": apiKey },
+      headers: { "x-api-key": apiKey, "x-exa-integration": "exa-for-sheets" },
       muteHttpExceptions: true
     });
 
