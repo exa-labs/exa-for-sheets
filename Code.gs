@@ -379,7 +379,7 @@ function EXA_ANSWER(prompt, prefix, suffix, includeCitations) {
       method: "post",
       contentType: "application/json",
       payload: JSON.stringify({ query: finalPrompt }),
-      headers: { "x-api-key": apiKey, "x-exa-integration": "exa-for-sheets" },
+      headers: { "x-api-key": apiKey, "x-exa-integration": "exa-for-sheets", "User-Agent": "exa-for-sheets 1.0" },
       muteHttpExceptions: true
     });
 
@@ -472,7 +472,7 @@ function EXA_CONTENTS(url) {
       method: "post",
       contentType: "application/json",
       payload: JSON.stringify({ urls: [url] }), // Exa's /contents endpoint expects an array of URLs
-      headers: { "x-api-key": apiKey, "x-exa-integration": "exa-for-sheets" }, // Corrected header based on Exa Docs
+      headers: { "x-api-key": apiKey, "x-exa-integration": "exa-for-sheets", "User-Agent": "exa-for-sheets 1.0" },
       muteHttpExceptions: true
     });
 
@@ -578,7 +578,7 @@ function EXA_FINDSIMILAR(url, numResults, includeDomainsStr, excludeDomainsStr, 
       method: "post",
       contentType: "application/json",
       payload: JSON.stringify(payload),
-      headers: { "x-api-key": apiKey, "x-exa-integration": "exa-for-sheets" },
+      headers: { "x-api-key": apiKey, "x-exa-integration": "exa-for-sheets", "User-Agent": "exa-for-sheets 1.0" },
       muteHttpExceptions: true
     });
 
@@ -658,7 +658,7 @@ function EXA_SEARCH(query, numResults, searchType, prefix, suffix) {
         type: type,
         useAutoprompt: (type !== 'keyword') // Enable autoprompt for neural/auto by default
       }),
-      headers: { "x-api-key": apiKey, "x-exa-integration": "exa-for-sheets" },
+      headers: { "x-api-key": apiKey, "x-exa-integration": "exa-for-sheets", "User-Agent": "exa-for-sheets 1.0" },
       muteHttpExceptions: true
     });
 
