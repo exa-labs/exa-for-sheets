@@ -472,9 +472,23 @@
     <div id="docsTab" class="tab-content">
       <h3>Documentation</h3>
 
+      <div class="doc-section" style="background-color: #EFF6FF; border: 1px solid #3B82F6; border-radius: 6px; padding: 12px;">
+        <h4 style="color: #1D4ED8; margin-top: 0;">EXA (Recommended)</h4>
+        <p>Simple AI-powered data enrichment. Just describe what you want!</p>
+        <p><strong>Parameters:</strong></p>
+        <p><code>prompt</code> (string, required): What information you want.</p>
+        <p><code>context</code> (string/cell, optional): The data to enrich (e.g., company name in A1).</p>
+        <p><code>includeCitations</code> (boolean, optional): If TRUE, includes sources. Defaults to FALSE.</p>
+        <p><strong>Examples:</strong></p>
+        <p style="font-family: monospace; font-size: 0.85em; background-color: #F3F4F6; padding: 4px 8px; border-radius: 4px; margin: 4px 0;">=EXA("Return only the company website URL", A1)</p>
+        <p style="font-family: monospace; font-size: 0.85em; background-color: #F3F4F6; padding: 4px 8px; border-radius: 4px; margin: 4px 0;">=EXA("Return only the company headcount", A1)</p>
+        <p style="font-family: monospace; font-size: 0.85em; background-color: #F3F4F6; padding: 4px 8px; border-radius: 4px; margin: 4px 0;">=EXA("Return only the CEO name", A1)</p>
+        <p style="font-family: monospace; font-size: 0.85em; background-color: #F3F4F6; padding: 4px 8px; border-radius: 4px; margin: 4px 0;">=EXA("Return the Amazon rating of this product", A1)</p>
+      </div>
+
       <div class="doc-section">
         <h4>EXA_ANSWER</h4>
-        <p>Queries Exa /answer endpoint for an AI-generated answer based on search results.</p>
+        <p>Advanced version with prefix/suffix options. Use EXA() for simpler use cases.</p>
         <p><strong>Parameters:</strong></p>
         <p><code>prompt</code> (string, required): The main question/prompt.</p>
         <p><code>prefix</code> (string, optional): Text added before the prompt.</p>
