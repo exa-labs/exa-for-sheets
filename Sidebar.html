@@ -479,6 +479,16 @@
     <!-- Documentation Tab -->
     <div id="docsTab" class="tab-content">
       <h3>Documentation</h3>
+      
+      <div class="doc-section" style="background-color: #FEF3C7; border: 1px solid #F59E0B; border-radius: 6px; padding: 12px; margin-bottom: 20px;">
+        <h4 style="color: #92400E; margin-top: 0;">Important: Controlling API Usage</h4>
+        <p style="color: #78350F;"><strong>Auto-refresh behavior:</strong> Exa functions automatically recalculate when you open the sheet, edit cells, or when Google Sheets refreshes. Each recalculation uses API credits.</p>
+        <p style="color: #78350F;"><strong>To prevent unexpected charges:</strong></p>
+        <p style="color: #78350F;">1. Use the <code>numResults</code> parameter to limit results (e.g., <code>=EXA_SEARCH("query", 3)</code> returns only 3 URLs)</p>
+        <p style="color: #78350F;">2. After getting results, copy cells and "Paste as Values" (Ctrl+Shift+V) to freeze them</p>
+        <p style="color: #78350F;">3. Remove your API key from the sidebar when not actively using the add-on</p>
+        <p style="color: #78350F;"><strong>Tip:</strong> Start with small batches (10-20 rows) before scaling up to hundreds of rows.</p>
+      </div>
 
       <div class="doc-section">
         <h4>EXA_ANSWER</h4>
