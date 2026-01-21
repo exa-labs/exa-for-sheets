@@ -3,18 +3,19 @@
   "version": "1.0.0",
   "description": "Exa API integration for Google Sheets",
   "main": "Code.gs",
-  "scripts": {
-    "login": "clasp login",
-    "create": "clasp create --type standalone --title \"Exa for Sheets\"",
-    "push": "clasp push -f",
-    "pull": "clasp pull",
-    "open": "clasp open",
-    "deploy": "clasp deploy",
-    "logs": "clasp logs",
-    "watch": "clasp push --watch",
-    "version": "clasp version",
-    "versions": "clasp versions"
-  },
+    "scripts": {
+      "login": "clasp login",
+      "create": "clasp create --type standalone --title \"Exa for Sheets\"",
+      "push": "clasp push -f",
+      "pull": "clasp pull",
+      "open": "clasp open",
+      "deploy": "clasp deploy",
+      "logs": "clasp logs",
+      "watch": "clasp push --watch",
+      "version": "clasp version",
+      "versions": "clasp versions",
+      "test": "jest"
+    },
   "keywords": [
     "google-sheets",
     "add-on",
@@ -25,7 +26,8 @@
   "author": "",
   "license": "MIT",
   "devDependencies": {
-    "@google/clasp": "^2.4.2"
+    "@google/clasp": "^2.4.2",
+    "jest": "^30.2.0"
   },
   "engines": {
     "node": ">=14.0.0"
