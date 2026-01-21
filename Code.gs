@@ -349,6 +349,28 @@ function ensureAuthorized() {
 }
 
 /**
+ * Simple AI-powered data enrichment using Exa. This is the recommended function for most use cases.
+ * Just describe what information you want about the data in the referenced cell.
+ * 
+ * Examples:
+ *   =EXA("Return only the company website URL", A1)
+ *   =EXA("Return only the company headcount", A1)
+ *   =EXA("Return only the CEO name", A1)
+ *   =EXA("Return the Amazon rating of this product", A1)
+ *
+ * @param {string} prompt What information you want (e.g., "Return only the company website URL").
+ * @param {string} [context=""] Optional. Cell reference or text to enrich (e.g., company name in A1).
+ * @param {boolean} [includeCitations=FALSE] Optional. If TRUE, includes source citations. Defaults to FALSE.
+ * @return {string} The requested information or an error message.
+ * @customfunction
+ */
+function EXA(prompt, context, includeCitations) {
+  // Build the full prompt by combining the instruction with the context
+  const fullPrompt = context ? `${prompt}: ${context}` : prompt;
+  return EXA_ANSWER(fullPrompt, "", "", includeCitations);
+}
+
+/**
  * Queries the Exa /answer endpoint to provide an AI-generated answer based on search results.
  * Allows adding prefix/suffix text and optionally includes source citations.
  * By default, extracts and returns only the core answer text before any inline citations like " ([Source](URL)...)".
