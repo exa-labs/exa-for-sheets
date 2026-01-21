@@ -394,38 +394,38 @@ function EXA_ANSWER(prompt, prefix, suffix, includeCitations) {
         const fullAnswerFromApi = result.answer;
         let finalOutput = fullAnswerFromApi; // Default to the full answer
 
+        // Regex to match inline citations like " ([Source](URL))" or " ([Source](URL), [Source2](URL2))"
+        const inlineCitationRegex = /\s*\(\[([^\]]+)\]\(([^\)]+)\)(?:,\s*\[([^\]]+)\]\(([^\)]+)\))*\)/g;
+        
+        // Always strip inline citations from the answer text for cleaner output
+        const cleanAnswer = fullAnswerFromApi.replace(inlineCitationRegex, '').trim();
+        
         if (!shouldShowFullAnswerWithCitations) {
-          // --- Default Behavior: Strip Inline Citations ---
-          // Remove inline citation patterns like " ([Source](URL))" or " ([Source](URL), [Source2](URL2))"
-          // This regex matches citations in the format: space followed by opening paren, bracket, content, closing bracket, paren
-          // It handles multiple consecutive citations separated by commas
-          finalOutput = fullAnswerFromApi.replace(/\s+\(\[([^\]]+)\]\([^\)]+\)(?:,\s*\[([^\]]+)\]\([^\)]+\))*\)/g, '').trim();
-
-          // If no inline citations were found, use the full answer
-          if (finalOutput === '') {
-            finalOutput = fullAnswerFromApi.trim();
-          }
+          // --- Default Behavior: Return clean answer without citations ---
+          finalOutput = cleanAnswer || fullAnswerFromApi.trim();
 
         } else {
           // --- Include Citations Behavior ---
-          // Use the full answer from API, and append from the citations array if present
-           finalOutput = fullAnswerFromApi.trim(); // Start with the full API answer
-
-           if (result.citations && Array.isArray(result.citations) && result.citations.length > 0) {
-              const formattedCitations = result.citations.map(citation => {
-                  const title = citation.title || 'Source';
-                  const url = citation.url;
-                  return url ? `([${title}](${url}))` : null;
-              })
-              .filter(c => c !== null)
-              .join(', ');
-
-              if (formattedCitations.length > 0) {
-                  const separator = (finalOutput.slice(-1) !== ' ' && finalOutput.slice(-1) !== '\n') ? ' ' : '';
-                  finalOutput += separator + formattedCitations; // Append the extra citations
+          // Return clean answer text, then append all citations at the end in a clear format
+          finalOutput = cleanAnswer || fullAnswerFromApi.trim();
+          
+          // Collect citations from the API's citations array
+          const allCitations = [];
+          
+          if (result.citations && Array.isArray(result.citations) && result.citations.length > 0) {
+            result.citations.forEach(citation => {
+              const title = citation.title || 'Source';
+              const url = citation.url;
+              if (url) {
+                allCitations.push(`[${title}](${url})`);
               }
-           }
-           // If includeCitations is true but no citations array, finalOutput remains the fullAnswerFromApi
+            });
+          }
+          
+          // Append citations at the end with clear separation
+          if (allCitations.length > 0) {
+            finalOutput += '\n\nSources:\n' + allCitations.map((c, i) => `${i + 1}. ${c}`).join('\n');
+          }
         }
 
         return finalOutput.trim(); // Return the processed output
