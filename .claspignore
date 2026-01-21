@@ -1,0 +1,9 @@
+# Ignore test files - these should not be pushed to Google Apps Script
+__tests__/**
+jest.config.js
+node_modules/**
+package.json
+package-lock.json
+.git/**
+.gitignore
+README.md
