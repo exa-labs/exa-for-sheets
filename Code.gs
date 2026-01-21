@@ -631,10 +631,12 @@ function EXA_FINDSIMILAR(url, numResults, includeDomainsStr, excludeDomainsStr, 
  * @param {string} [searchType="auto"] Optional. The type of search ('auto', 'neural', 'keyword'). Defaults to 'auto'.
  * @param {string} [prefix=""] Optional. Text to add before the main query.
  * @param {string} [suffix=""] Optional. Text to add after the main query.
+ * @param {string} [includeDomainsStr=""] Optional. Comma-separated list of domains to restrict results to (e.g., "linkedin.com,crunchbase.com").
+ * @param {string} [excludeDomainsStr=""] Optional. Comma-separated list of domains to exclude from results (e.g., "wikipedia.org,reddit.com").
  * @return {string[]} An array of result URLs or a single cell error message.
  * @customfunction
  */
-function EXA_SEARCH(query, numResults, searchType, prefix, suffix) {
+function EXA_SEARCH(query, numResults, searchType, prefix, suffix, includeDomainsStr, excludeDomainsStr) {
   const apiKey = getApiKey();
   if (!apiKey) return [["No API key set. Please set your API key in the Exa AI sidebar."]];
 
@@ -648,16 +650,37 @@ function EXA_SEARCH(query, numResults, searchType, prefix, suffix) {
   const count = (typeof numResults === 'number' && numResults > 0 && numResults <= 10) ? Math.floor(numResults) : 1; // Default to 1, max 10 for free tier
   const type = (searchType && ['auto', 'neural', 'keyword'].includes(searchType)) ? searchType : 'auto'; // Default to 'auto'
 
+  // Process domain lists (comma-separated string to array)
+  const processDomains = (domainStr) => {
+    if (typeof domainStr === 'string' && domainStr.trim() !== '') {
+      return domainStr.split(',').map(d => d.trim()).filter(d => d.length > 0);
+    }
+    return null;
+  };
+
+  const includeDomains = processDomains(includeDomainsStr);
+  const excludeDomains = processDomains(excludeDomainsStr);
+
+  // Build payload
+  const payload = {
+    query: finalQuery,
+    numResults: count,
+    type: type,
+    useAutoprompt: (type !== 'keyword')
+  };
+
+  if (includeDomains && includeDomains.length > 0) {
+    payload.includeDomains = includeDomains;
+  }
+  if (excludeDomains && excludeDomains.length > 0) {
+    payload.excludeDomains = excludeDomains;
+  }
+
   try {
     const response = UrlFetchApp.fetch("https://api.exa.ai/search", {
       method: "post",
       contentType: "application/json",
-      payload: JSON.stringify({
-        query: finalQuery,
-        numResults: count,
-        type: type,
-        useAutoprompt: (type !== 'keyword') // Enable autoprompt for neural/auto by default
-      }),
+      payload: JSON.stringify(payload),
       headers: { "x-api-key": apiKey, "x-exa-integration": "exa-for-sheets", "User-Agent": "exa-for-sheets 1.0" },
       muteHttpExceptions: true
     });
