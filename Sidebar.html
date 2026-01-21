@@ -457,14 +457,22 @@
 
     <!-- Batch Operations Tab -->
     <div id="batchTab" class="tab-content">
-      <h3>Batch Refresh</h3>
+      <h3>Batch Operations</h3>
       
       <div class="batch-buttons">
         <button id="refreshSelected" onclick="performBatchOperation('refresh')">Refresh Selected Cells</button>
+        <button id="convertToValues" onclick="convertSelectedToValues()" style="background-color: #059669;">Convert to Values (Freeze)</button>
       </div>
       
       <div id="batchStatus" class="status-display">
-        Select cells containing Exa functions and click refresh.
+        Select cells containing Exa functions and choose an operation.
+      </div>
+      
+      <div style="margin-top: 15px; padding: 12px; background-color: #FEF3C7; border: 1px solid #F59E0B; border-radius: 6px; font-size: 0.85em;">
+        <strong style="color: #92400E;">Tip: Prevent unexpected charges</strong>
+        <p style="margin: 8px 0 0 0; color: #78350F; line-height: 1.4;">
+          Exa functions automatically recalculate when the sheet refreshes. Use <strong>"Convert to Values"</strong> to freeze results and prevent additional API calls. You can always re-add the formula later if you need fresh data.
+        </p>
       </div>
     </div>
 
@@ -787,8 +795,9 @@
       function performBatchOperation(operation) {
         const batchStatusDiv = document.getElementById('batchStatus');
         
-        // Disable button during operation
+        // Disable buttons during operation
         document.getElementById('refreshSelected').disabled = true;
+        document.getElementById('convertToValues').disabled = true;
         
         // Update status
         batchStatusDiv.textContent = 'Processing...';
@@ -801,16 +810,51 @@
               batchStatusDiv.textContent = `${result.message}`;
             }
             
-            // Re-enable button
+            // Re-enable buttons
             document.getElementById('refreshSelected').disabled = false;
+            document.getElementById('convertToValues').disabled = false;
           })
           .withFailureHandler(error => {
             batchStatusDiv.textContent = `Error: ${error.message || error}`;
             
-            // Re-enable button
+            // Re-enable buttons
             document.getElementById('refreshSelected').disabled = false;
+            document.getElementById('convertToValues').disabled = false;
           })
           .processBatchOperation(operation);
+      }
+      
+      // Convert selected Exa functions to static values (freeze)
+      function convertSelectedToValues() {
+        const batchStatusDiv = document.getElementById('batchStatus');
+        
+        // Disable buttons during operation
+        document.getElementById('refreshSelected').disabled = true;
+        document.getElementById('convertToValues').disabled = true;
+        
+        // Update status
+        batchStatusDiv.textContent = 'Converting to values...';
+        
+        google.script.run
+          .withSuccessHandler(result => {
+            if (result.success) {
+              batchStatusDiv.textContent = `${result.message}`;
+            } else {
+              batchStatusDiv.textContent = `${result.message}`;
+            }
+            
+            // Re-enable buttons
+            document.getElementById('refreshSelected').disabled = false;
+            document.getElementById('convertToValues').disabled = false;
+          })
+          .withFailureHandler(error => {
+            batchStatusDiv.textContent = `Error: ${error.message || error}`;
+            
+            // Re-enable buttons
+            document.getElementById('refreshSelected').disabled = false;
+            document.getElementById('convertToValues').disabled = false;
+          })
+          .convertToValues();
       }
 
     </script>

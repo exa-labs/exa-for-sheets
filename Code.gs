@@ -790,3 +790,71 @@ function processBatchOperation(operation) {
     };
   }
 }
+
+/**
+ * Converts selected cells containing Exa functions to their static values.
+ * This prevents automatic recalculation and unexpected API charges.
+ * The formulas are replaced with their current values, so they won't refresh.
+ * 
+ * @return {Object} Result object with success flag and message
+ */
+function convertToValues() {
+  try {
+    const sheet = SpreadsheetApp.getActiveSheet();
+    const selection = sheet.getActiveRange();
+    
+    if (!selection) {
+      return { 
+        success: false, 
+        message: 'No cells selected. Please select cells containing Exa functions.'
+      };
+    }
+    
+    const formulas = selection.getFormulas();
+    const values = selection.getValues();
+    const exaCells = [];
+    
+    formulas.forEach((row, rowIndex) => {
+      row.forEach((formula, colIndex) => {
+        if (formula && formula.toUpperCase().match(/^=EXA_/)) {
+          exaCells.push({
+            row: rowIndex,
+            col: colIndex,
+            formula: formula,
+            value: values[rowIndex][colIndex]
+          });
+        }
+      });
+    });
+    
+    if (exaCells.length === 0) {
+      const totalCells = formulas.flat().length;
+      const cellText = totalCells === 1 ? 'cell' : 'cells';
+      return { 
+        success: false, 
+        message: `No Exa functions found in the ${totalCells} selected ${cellText}.`
+      };
+    }
+    
+    // Replace formulas with their values
+    exaCells.forEach(item => {
+      const cell = selection.getCell(item.row + 1, item.col + 1);
+      cell.setValue(item.value);
+    });
+    
+    SpreadsheetApp.flush();
+    
+    const cellText = exaCells.length === 1 ? 'cell' : 'cells';
+    return { 
+      success: true, 
+      message: `Converted ${exaCells.length} ${cellText} to static values. These cells will no longer auto-refresh.`
+    };
+    
+  } catch (e) {
+    Logger.log(`Error in convertToValues: ${e}`);
+    return { 
+      success: false, 
+      message: `Operation failed: ${e.message}`
+    };
+  }
+}
