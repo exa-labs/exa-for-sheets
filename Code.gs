@@ -811,7 +811,8 @@ function processBatchOperation(operation) {
     
     formulas.forEach((row, rowIndex) => {
       row.forEach((formula, colIndex) => {
-        if (formula && formula.toUpperCase().match(/^=EXA_/)) {
+        // Match =EXA( or =EXA_ to include both simplified EXA() and EXA_ANSWER, EXA_SEARCH, etc.
+        if (formula && formula.toUpperCase().match(/^=EXA[_(]/)) {
           exaCells.push({
             cell: selection.getCell(rowIndex + 1, colIndex + 1),
             formula: formula,
@@ -911,7 +912,8 @@ function convertToValues() {
     
     formulas.forEach((row, rowIndex) => {
       row.forEach((formula, colIndex) => {
-        if (formula && formula.toUpperCase().match(/^=EXA_/)) {
+        // Match =EXA( or =EXA_ to include both simplified EXA() and EXA_ANSWER, EXA_SEARCH, etc.
+        if (formula && formula.toUpperCase().match(/^=EXA[_(]/)) {
           exaCells.push({
             row: rowIndex,
             col: colIndex,
