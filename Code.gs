@@ -1,3 +1,52 @@
+// Rate limiting configuration
+var RATE_LIMIT_CONFIG = {
+  maxRetries: 3,
+  initialDelayMs: 1000,
+  maxDelayMs: 10000
+};
+
+/**
+ * Makes an HTTP request with exponential backoff retry on rate limit (429) errors.
+ * @param {string} url The URL to fetch
+ * @param {Object} options UrlFetchApp options
+ * @return {HTTPResponse} The response object
+ */
+function fetchWithRetry(url, options) {
+  var lastError = null;
+  var delay = RATE_LIMIT_CONFIG.initialDelayMs;
+  
+  for (var attempt = 0; attempt <= RATE_LIMIT_CONFIG.maxRetries; attempt++) {
+    var response = UrlFetchApp.fetch(url, options);
+    var code = response.getResponseCode();
+    
+    if (code !== 429) {
+      return response;
+    }
+    
+    // Rate limited - check if we should retry
+    if (attempt >= RATE_LIMIT_CONFIG.maxRetries) {
+      return response; // Return the 429 response after max retries
+    }
+    
+    // Check for Retry-After header
+    var retryAfter = response.getHeaders()['Retry-After'];
+    if (retryAfter) {
+      delay = parseInt(retryAfter, 10) * 1000;
+    }
+    
+    // Cap the delay
+    delay = Math.min(delay, RATE_LIMIT_CONFIG.maxDelayMs);
+    
+    Logger.log('Rate limited (429). Retrying in ' + delay + 'ms (attempt ' + (attempt + 1) + '/' + RATE_LIMIT_CONFIG.maxRetries + ')');
+    Utilities.sleep(delay);
+    
+    // Exponential backoff for next attempt
+    delay = delay * 2;
+  }
+  
+  return response;
+}
+
 function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('Exa AI')
@@ -397,7 +446,7 @@ function EXA_ANSWER(prompt, prefix, suffix, includeCitations) {
 
   // --- API Call ---
   try {
-    const response = UrlFetchApp.fetch("https://api.exa.ai/answer", {
+    const response = fetchWithRetry("https://api.exa.ai/answer", {
       method: "post",
       contentType: "application/json",
       payload: JSON.stringify({ query: finalPrompt }),
@@ -457,6 +506,8 @@ function EXA_ANSWER(prompt, prefix, suffix, includeCitations) {
       }
     } else if (responseCode === 401) {
       return "API Error: Invalid API Key.";
+    } else if (responseCode === 429) {
+      return "API Error: Rate limit exceeded. Please wait a moment and try again.";
     } else { // Handle other errors
       let errorMessage = `API Error: Status ${responseCode}.`;
       try {
@@ -490,10 +541,10 @@ function EXA_CONTENTS(url) {
   }
 
   try {
-    const response = UrlFetchApp.fetch("https://api.exa.ai/contents", {
+    const response = fetchWithRetry("https://api.exa.ai/contents", {
       method: "post",
       contentType: "application/json",
-      payload: JSON.stringify({ urls: [url] }), // Exa's /contents endpoint expects an array of URLs
+      payload: JSON.stringify({ urls: [url] }),
       headers: { "x-api-key": apiKey, "x-exa-integration": "exa-for-sheets", "User-Agent": "exa-for-sheets 1.0" },
       muteHttpExceptions: true
     });
@@ -503,18 +554,17 @@ function EXA_CONTENTS(url) {
 
     if (responseCode === 200) {
         const result = JSON.parse(responseBody);
-        // The response structure for /contents typically wraps results in a 'results' array
         const contentData = result.results && result.results[0];
         if (contentData) {
-            // Prioritize text content based on Exa's common response structure
             return (contentData.text || contentData.highlights || "No relevant content found in response.").trim();
         } else {
             return "API returned successfully, but no content data found for this URL.";
         }
     } else if (responseCode === 401) {
         return "API Error: Invalid API Key. Please check your key in the menu.";
+    } else if (responseCode === 429) {
+        return "API Error: Rate limit exceeded. Please wait a moment and try again.";
     } else {
-        // Try to parse error message from API if possible, otherwise return generic error
         let errorMessage = `API Error: Received status code ${responseCode}.`;
         try {
             const errorResult = JSON.parse(responseBody);
@@ -596,7 +646,7 @@ function EXA_FINDSIMILAR(url, numResults, includeDomainsStr, excludeDomainsStr, 
 
   // --- API Call and Response Handling ---
   try {
-    const response = UrlFetchApp.fetch("https://api.exa.ai/findSimilar", {
+    const response = fetchWithRetry("https://api.exa.ai/findSimilar", {
       method: "post",
       contentType: "application/json",
       payload: JSON.stringify(payload),
@@ -610,14 +660,15 @@ function EXA_FINDSIMILAR(url, numResults, includeDomainsStr, excludeDomainsStr, 
     if (responseCode === 200) {
       const result = JSON.parse(responseBody);
       if (result && result.results && result.results.length > 0) {
-        return result.results.map(item => [item.url || "N/A"]); // Map URLs, provide fallback
+        return result.results.map(item => [item.url || "N/A"]);
       } else {
         return [["No similar URLs found matching the criteria."]];
       }
     } else if (responseCode === 401) {
       return [["API Error: Invalid API Key."]];
+    } else if (responseCode === 429) {
+      return [["API Error: Rate limit exceeded. Please wait a moment and try again."]];
     } else if (responseCode === 400) {
-        // Handle potential bad request errors (e.g., invalid filters)
         let errorMessage = `API Error (Bad Request): Status ${responseCode}.`;
         try {
             const errorResult = JSON.parse(responseBody);
@@ -626,8 +677,7 @@ function EXA_FINDSIMILAR(url, numResults, includeDomainsStr, excludeDomainsStr, 
             errorMessage += ` Response: ${responseBody}`;
         }
         return [[errorMessage]];
-    }
-    else { // Handle other errors
+    } else {
       let errorMessage = `API Error: Status ${responseCode}.`;
       try {
         const errorResult = JSON.parse(responseBody);
@@ -638,8 +688,7 @@ function EXA_FINDSIMILAR(url, numResults, includeDomainsStr, excludeDomainsStr, 
       return [[errorMessage]];
     }
   } catch (e) {
-    // Catch script execution errors (e.g., network issues)
-    Logger.log(`EXA_FINDSIMILAR Error: ${e} for payload: ${JSON.stringify(payload)}`); // Log for debugging
+    Logger.log(`EXA_FINDSIMILAR Error: ${e} for payload: ${JSON.stringify(payload)}`);
     return [[`Script Error: ${e.message}`]];
   }
 }
@@ -699,7 +748,7 @@ function EXA_SEARCH(query, numResults, searchType, prefix, suffix, includeDomain
   }
 
   try {
-    const response = UrlFetchApp.fetch("https://api.exa.ai/search", {
+    const response = fetchWithRetry("https://api.exa.ai/search", {
       method: "post",
       contentType: "application/json",
       payload: JSON.stringify(payload),
@@ -710,16 +759,17 @@ function EXA_SEARCH(query, numResults, searchType, prefix, suffix, includeDomain
     const responseCode = response.getResponseCode();
     const responseBody = response.getContentText();
 
-     if (responseCode === 200) {
+    if (responseCode === 200) {
       const result = JSON.parse(responseBody);
       if (result && result.results && result.results.length > 0) {
-        // Map results to a 2D array for vertical spill
         return result.results.map(item => [item.url]);
       } else {
         return [["API returned successfully, but no search results found."]];
       }
     } else if (responseCode === 401) {
-      return [["❌ API Error: Invalid API Key. Please check your key in the menu."]];
+      return [["API Error: Invalid API Key. Please check your key in the menu."]];
+    } else if (responseCode === 429) {
+      return [["API Error: Rate limit exceeded. Please wait a moment and try again."]];
     } else {
       let errorMessage = `API Error: Status ${responseCode}.`;
       try {

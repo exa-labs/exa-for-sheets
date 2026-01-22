@@ -496,6 +496,108 @@ describe('EXA_FINDSIMILAR', () => {
   });
 });
 
+describe('Rate Limiting', () => {
+  beforeEach(() => {
+    resetMocks();
+    saveApiKey('exa_test_api_key');
+  });
+
+  test('fetchWithRetry should return response on success', () => {
+    UrlFetchApp.fetch.mockReturnValue({
+      getResponseCode: () => 200,
+      getContentText: () => JSON.stringify({ answer: 'test' })
+    });
+
+    const response = fetchWithRetry('https://api.exa.ai/answer', { method: 'post' });
+    
+    expect(response.getResponseCode()).toBe(200);
+    expect(UrlFetchApp.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  test('fetchWithRetry should retry on 429 and succeed', () => {
+    let callCount = 0;
+    UrlFetchApp.fetch.mockImplementation(() => {
+      callCount++;
+      if (callCount === 1) {
+        return {
+          getResponseCode: () => 429,
+          getContentText: () => 'Rate limited',
+          getHeaders: () => ({})
+        };
+      }
+      return {
+        getResponseCode: () => 200,
+        getContentText: () => JSON.stringify({ answer: 'test' })
+      };
+    });
+
+    const response = fetchWithRetry('https://api.exa.ai/answer', { method: 'post' });
+    
+    expect(response.getResponseCode()).toBe(200);
+    expect(UrlFetchApp.fetch).toHaveBeenCalledTimes(2);
+    expect(Utilities.sleep).toHaveBeenCalledTimes(1);
+  });
+
+  test('fetchWithRetry should respect Retry-After header', () => {
+    let callCount = 0;
+    UrlFetchApp.fetch.mockImplementation(() => {
+      callCount++;
+      if (callCount === 1) {
+        return {
+          getResponseCode: () => 429,
+          getContentText: () => 'Rate limited',
+          getHeaders: () => ({ 'Retry-After': '2' })
+        };
+      }
+      return {
+        getResponseCode: () => 200,
+        getContentText: () => JSON.stringify({ answer: 'test' })
+      };
+    });
+
+    fetchWithRetry('https://api.exa.ai/answer', { method: 'post' });
+    
+    expect(Utilities.sleep).toHaveBeenCalledWith(2000);
+  });
+
+  test('fetchWithRetry should return 429 after max retries', () => {
+    UrlFetchApp.fetch.mockReturnValue({
+      getResponseCode: () => 429,
+      getContentText: () => 'Rate limited',
+      getHeaders: () => ({})
+    });
+
+    const response = fetchWithRetry('https://api.exa.ai/answer', { method: 'post' });
+    
+    expect(response.getResponseCode()).toBe(429);
+    expect(UrlFetchApp.fetch).toHaveBeenCalledTimes(4); // 1 initial + 3 retries
+  });
+
+  test('EXA_ANSWER should return rate limit error message on 429', () => {
+    UrlFetchApp.fetch.mockReturnValue({
+      getResponseCode: () => 429,
+      getContentText: () => 'Rate limited',
+      getHeaders: () => ({})
+    });
+
+    const result = EXA_ANSWER('test query');
+    
+    expect(result).toContain('Rate limit exceeded');
+  });
+
+  test('EXA_SEARCH should return rate limit error message on 429', () => {
+    UrlFetchApp.fetch.mockReturnValue({
+      getResponseCode: () => 429,
+      getContentText: () => 'Rate limited',
+      getHeaders: () => ({})
+    });
+
+    const result = EXA_SEARCH('test query');
+    
+    expect(result[0][0]).toContain('Rate limit exceeded');
+  });
+});
+
 describe('Helper Functions', () => {
   beforeEach(() => {
     resetMocks();

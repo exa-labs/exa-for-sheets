@@ -63,7 +63,8 @@ global.HtmlService = {
 
 // Mock Utilities
 global.Utilities = {
-  getUuid: () => 'test-uuid-' + Math.random().toString(36).substr(2, 9)
+  getUuid: () => 'test-uuid-' + Math.random().toString(36).substr(2, 9),
+  sleep: jest.fn()
 };
 
 // Mock Logger
