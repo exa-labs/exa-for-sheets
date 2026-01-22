@@ -65,7 +65,7 @@ function showSidebar() {
 function showAbout() {
   var ui = SpreadsheetApp.getUi();
   var message = 'Exa AI for Google Sheets\n\n' +
-                'Version: 1.0.0\n\n' +
+                'Version: 1.1.0\n\n' +
                 'This add-on provides powerful AI-driven search and analysis capabilities using the Exa API.\n\n' +
                 'Key Features:\n' +
                 '- EXA_ANSWER: Generate AI answers from web searches\n' +
@@ -450,7 +450,7 @@ function EXA_ANSWER(prompt, prefix, suffix, includeCitations) {
       method: "post",
       contentType: "application/json",
       payload: JSON.stringify({ query: finalPrompt }),
-      headers: { "x-api-key": apiKey, "x-exa-integration": "exa-for-sheets", "User-Agent": "exa-for-sheets 1.0" },
+      headers: { "x-api-key": apiKey, "x-exa-integration": "exa-for-sheets", "User-Agent": "exa-for-sheets 1.1" },
       muteHttpExceptions: true
     });
 
@@ -545,7 +545,7 @@ function EXA_CONTENTS(url) {
       method: "post",
       contentType: "application/json",
       payload: JSON.stringify({ urls: [url] }),
-      headers: { "x-api-key": apiKey, "x-exa-integration": "exa-for-sheets", "User-Agent": "exa-for-sheets 1.0" },
+      headers: { "x-api-key": apiKey, "x-exa-integration": "exa-for-sheets", "User-Agent": "exa-for-sheets 1.1" },
       muteHttpExceptions: true
     });
 
@@ -650,7 +650,7 @@ function EXA_FINDSIMILAR(url, numResults, includeDomainsStr, excludeDomainsStr, 
       method: "post",
       contentType: "application/json",
       payload: JSON.stringify(payload),
-      headers: { "x-api-key": apiKey, "x-exa-integration": "exa-for-sheets", "User-Agent": "exa-for-sheets 1.0" },
+      headers: { "x-api-key": apiKey, "x-exa-integration": "exa-for-sheets", "User-Agent": "exa-for-sheets 1.1" },
       muteHttpExceptions: true
     });
 
@@ -752,7 +752,7 @@ function EXA_SEARCH(query, numResults, searchType, prefix, suffix, includeDomain
       method: "post",
       contentType: "application/json",
       payload: JSON.stringify(payload),
-      headers: { "x-api-key": apiKey, "x-exa-integration": "exa-for-sheets", "User-Agent": "exa-for-sheets 1.0" },
+      headers: { "x-api-key": apiKey, "x-exa-integration": "exa-for-sheets", "User-Agent": "exa-for-sheets 1.1" },
       muteHttpExceptions: true
     });
 
