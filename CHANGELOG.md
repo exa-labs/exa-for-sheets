@@ -2,7 +2,7 @@
 
 All notable changes to Exa for Google Sheets will be documented in this file.
 
-## [1.1.0] - 2026-01-22
+## [2.0.0] - 2026-01-23
 
 ### New Features
 

@@ -65,7 +65,7 @@ function showSidebar() {
 function showAbout() {
   var ui = SpreadsheetApp.getUi();
   var message = 'Exa AI for Google Sheets\n\n' +
-                'Version: 1.1.0\n\n' +
+                'Version: 2.0.0\n\n' +
                 'This add-on provides powerful AI-driven search and analysis capabilities using the Exa API.\n\n' +
                 'Key Features:\n' +
                 '- EXA_ANSWER: Generate AI answers from web searches\n' +
