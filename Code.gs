@@ -463,33 +463,35 @@ function EXA_ANSWER(prompt, prefix, suffix, includeCitations, systemPrompt, outp
   // --- API Call ---
   try {
     let response;
+    const useChatCompletions = hasSystemPrompt || parsedSchema;
     
-    if (hasSystemPrompt && !parsedSchema) {
-      // Use chat completions endpoint ONLY for system prompt without output schema
-      const messages = [
-        { role: "system", content: systemPrompt.trim() },
-        { role: "user", content: finalPrompt }
-      ];
+    if (useChatCompletions) {
+      // Use chat completions endpoint for systemPrompt OR outputSchema (OpenAI-compatible format)
+      const messages = [];
+      if (hasSystemPrompt) {
+        messages.push({ role: "system", content: systemPrompt.trim() });
+      }
+      messages.push({ role: "user", content: finalPrompt });
+      
+      const chatPayload = { model: "exa", messages: messages };
+      if (parsedSchema) {
+        chatPayload.output_schema = parsedSchema;
+      }
       
       response = fetchWithRetry("https://api.exa.ai/chat/completions", {
         method: "post",
         contentType: "application/json",
-        payload: JSON.stringify({ model: "exa", messages: messages }),
-        headers: { "Authorization": `Bearer ${apiKey}`, "x-exa-integration": "exa-for-sheets", "User-Agent": "exa-for-sheets 1.1" },
+        payload: JSON.stringify(chatPayload),
+        headers: { "Authorization": `Bearer ${apiKey}`, "x-exa-integration": "exa-for-sheets", "User-Agent": "exa-for-sheets 2.0" },
         muteHttpExceptions: true
       });
     } else {
-      // Use /answer endpoint (with optional output_schema)
-      const answerPayload = { query: finalPrompt };
-      if (parsedSchema) {
-        answerPayload.output_schema = parsedSchema;
-      }
-      
+      // Use /answer endpoint (no systemPrompt, no outputSchema)
       response = fetchWithRetry("https://api.exa.ai/answer", {
         method: "post",
         contentType: "application/json",
-        payload: JSON.stringify(answerPayload),
-        headers: { "x-api-key": apiKey, "x-exa-integration": "exa-for-sheets", "User-Agent": "exa-for-sheets 1.1" },
+        payload: JSON.stringify({ query: finalPrompt }),
+        headers: { "x-api-key": apiKey, "x-exa-integration": "exa-for-sheets", "User-Agent": "exa-for-sheets 2.0" },
         muteHttpExceptions: true
       });
     }
@@ -503,36 +505,44 @@ function EXA_ANSWER(prompt, prefix, suffix, includeCitations, systemPrompt, outp
       
       let fullAnswerFromApi;
       let citations = [];
-      const usedChatCompletions = hasSystemPrompt && !parsedSchema;
       
-      if (usedChatCompletions) {
-        // Chat completions response format (only for systemPrompt without outputSchema)
+      if (useChatCompletions) {
+        // Chat completions response format (for systemPrompt OR outputSchema)
         if (result.choices && result.choices[0] && result.choices[0].message) {
-          fullAnswerFromApi = result.choices[0].message.content;
+          const messageContent = result.choices[0].message.content;
           citations = result.choices[0].message.citations || [];
+          
+          if (parsedSchema) {
+            // With outputSchema: content should be JSON, parse and extract
+            try {
+              const parsedContent = typeof messageContent === 'string' ? JSON.parse(messageContent) : messageContent;
+              if (returnRawJson === true) {
+                fullAnswerFromApi = JSON.stringify(parsedContent, null, 2);
+              } else {
+                // Extract value: if single key, return just the value; otherwise return formatted JSON
+                const keys = Object.keys(parsedContent);
+                if (keys.length === 1) {
+                  fullAnswerFromApi = String(parsedContent[keys[0]]);
+                } else {
+                  fullAnswerFromApi = JSON.stringify(parsedContent, null, 2);
+                }
+              }
+            } catch (e) {
+              // If parsing fails, return as-is (might already be the value)
+              fullAnswerFromApi = String(messageContent);
+            }
+          } else {
+            // Without outputSchema: just use the content as-is
+            fullAnswerFromApi = messageContent;
+          }
         } else {
           return "API returned a valid response, but no message content was found.";
         }
       } else {
-        // /answer endpoint response format
+        // /answer endpoint response format (no systemPrompt, no outputSchema)
         citations = result.citations || [];
         
-        if (parsedSchema && result.answer && typeof result.answer === 'object') {
-          // Structured output: answer is an object with schema fields
-          const answerObj = result.answer;
-          if (returnRawJson === true) {
-            fullAnswerFromApi = JSON.stringify(answerObj, null, 2);
-          } else {
-            // Extract value: if single key, return just the value; otherwise return formatted JSON
-            const keys = Object.keys(answerObj);
-            if (keys.length === 1) {
-              fullAnswerFromApi = String(answerObj[keys[0]]);
-            } else {
-              fullAnswerFromApi = JSON.stringify(answerObj, null, 2);
-            }
-          }
-        } else if (result && typeof result.answer === 'string') {
-          // Standard text answer
+        if (result && typeof result.answer === 'string') {
           fullAnswerFromApi = result.answer;
         } else {
           return "API returned a valid response, but no 'answer' field was found.";

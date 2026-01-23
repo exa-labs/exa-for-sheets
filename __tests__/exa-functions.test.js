@@ -265,12 +265,16 @@ describe('EXA_ANSWER', () => {
     expect(result).toBe('Will Bryk');
   });
 
-  test('should use /answer endpoint with output_schema when outputSchema is provided', () => {
+  test('should use chat completions endpoint with output_schema when outputSchema is provided', () => {
     UrlFetchApp.fetch.mockReturnValue({
       getResponseCode: () => 200,
       getContentText: () => JSON.stringify({
-        answer: { name: 'Will Bryk' },
-        citations: []
+        choices: [{
+          message: {
+            content: JSON.stringify({ name: 'Will Bryk' }),
+            citations: []
+          }
+        }]
       })
     });
 
@@ -279,13 +283,14 @@ describe('EXA_ANSWER', () => {
     const result = EXA_ANSWER('ceo of exa.ai', '', '', false, '', schema);
     
     expect(UrlFetchApp.fetch).toHaveBeenCalledWith(
-      'https://api.exa.ai/answer',
+      'https://api.exa.ai/chat/completions',
       expect.anything()
     );
     
     const callArgs = UrlFetchApp.fetch.mock.calls[0][1];
     const payload = JSON.parse(callArgs.payload);
     expect(payload.output_schema).toEqual(JSON.parse(schema));
+    expect(payload.model).toBe('exa');
     
     // Should extract the value from single-key object
     expect(result).toBe('Will Bryk');
@@ -295,8 +300,12 @@ describe('EXA_ANSWER', () => {
     UrlFetchApp.fetch.mockReturnValue({
       getResponseCode: () => 200,
       getContentText: () => JSON.stringify({
-        answer: { name: 'Will Bryk' },
-        citations: []
+        choices: [{
+          message: {
+            content: JSON.stringify({ name: 'Will Bryk' }),
+            citations: []
+          }
+        }]
       })
     });
 
@@ -313,8 +322,12 @@ describe('EXA_ANSWER', () => {
     UrlFetchApp.fetch.mockReturnValue({
       getResponseCode: () => 200,
       getContentText: () => JSON.stringify({
-        answer: { name: 'Will Bryk', company: 'Exa' },
-        citations: []
+        choices: [{
+          message: {
+            content: JSON.stringify({ name: 'Will Bryk', company: 'Exa' }),
+            citations: []
+          }
+        }]
       })
     });
 
