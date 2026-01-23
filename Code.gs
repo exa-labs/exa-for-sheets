@@ -508,12 +508,32 @@ function EXA_ANSWER(prompt, prefix, suffix, includeCitations, systemPrompt, outp
       if (usedChatCompletions) {
         // Chat completions response format
         if (result.choices && result.choices[0] && result.choices[0].message) {
-          fullAnswerFromApi = result.choices[0].message.content;
+          const messageContent = result.choices[0].message.content;
           citations = result.choices[0].message.citations || [];
+          
+          // If outputSchema was provided, try to parse and extract the value
+          if (parsedSchema) {
+            try {
+              const jsonResponse = JSON.parse(messageContent);
+              // If it's an object with a single key, return just the value
+              const keys = Object.keys(jsonResponse);
+              if (keys.length === 1) {
+                fullAnswerFromApi = String(jsonResponse[keys[0]]);
+              } else {
+                // Multiple keys - return formatted JSON
+                fullAnswerFromApi = JSON.stringify(jsonResponse, null, 2);
+              }
+            } catch (e) {
+              // If JSON parsing fails, return the raw content
+              fullAnswerFromApi = messageContent;
+            }
+          } else {
+            fullAnswerFromApi = messageContent;
+          }
         } else {
           return "API returned a valid response, but no message content was found.";
         }
-      } else {
+      }else {
         // Standard /answer response format
         if (result && typeof result.answer === 'string') {
           fullAnswerFromApi = result.answer;
