@@ -407,16 +407,17 @@ function ensureAuthorized() {
  *   =EXA("Return only the CEO name", A1)
  *   =EXA("Return the Amazon rating of this product", A1)
  *
+ * For advanced options (system prompt, output schema, citations), use EXA_ANSWER instead.
+ *
  * @param {string} prompt What information you want (e.g., "Return only the company website URL").
  * @param {string} [context=""] Optional. Cell reference or text to enrich (e.g., company name in A1).
- * @param {boolean} [includeCitations=FALSE] Optional. If TRUE, includes source citations. Defaults to FALSE.
  * @return {string} The requested information or an error message.
  * @customfunction
  */
-function EXA(prompt, context, includeCitations) {
+function EXA(prompt, context) {
   // Build the full prompt by combining the instruction with the context
   const fullPrompt = context ? `${prompt}: ${context}` : prompt;
-  return EXA_ANSWER(fullPrompt, "", "", includeCitations);
+  return EXA_ANSWER(fullPrompt);
 }
 
 /**
@@ -424,14 +425,18 @@ function EXA(prompt, context, includeCitations) {
  * Allows adding prefix/suffix text and optionally includes source citations.
  * By default, extracts and returns only the core answer text before any inline citations like " ([Source](URL)...)".
  *
+ * For structured output, generate schemas at: https://dashboard.exa.ai/playground/answer
+ *
  * @param {string} prompt The main question or prompt to send to Exa. Can be a cell reference.
  * @param {string} [prefix=""] Optional. Text to add before the main prompt.
  * @param {string} [suffix=""] Optional. Text to add after the main prompt.
- * @param {boolean} [includeCitations=FALSE] Optional. If TRUE, returns the full answer string as received from the API (including inline citations) AND appends any additional citations from the API's 'citations' array. Defaults to FALSE (extracts core answer only).
- * @return {string} The core answer, the full answer with citations, or an error message.
+ * @param {boolean} [includeCitations=FALSE] Optional. If TRUE, appends source citations. Defaults to FALSE.
+ * @param {string} [systemPrompt=""] Optional. System instructions to control output format (e.g., "only return a number"). Uses chat completions endpoint.
+ * @param {string} [outputSchema=""] Optional. JSON schema for structured output (e.g., '{"type":"object","properties":{"value":{"type":"number"}},"required":["value"]}').
+ * @return {string} The answer, or structured JSON if outputSchema is provided.
  * @customfunction
  */
-function EXA_ANSWER(prompt, prefix, suffix, includeCitations) {
+function EXA_ANSWER(prompt, prefix, suffix, includeCitations, systemPrompt, outputSchema) {
   const apiKey = getApiKey();
   if (!apiKey) return "No API key set. Please set your API key in the Exa AI sidebar.";
 
@@ -441,18 +446,53 @@ function EXA_ANSWER(prompt, prefix, suffix, includeCitations) {
   }
 
   const finalPrompt = `${prefix || ''} ${prompt} ${suffix || ''}`.trim();
-  // Explicitly check if includeCitations is exactly TRUE.
   const shouldShowFullAnswerWithCitations = includeCitations === true;
+  const hasSystemPrompt = typeof systemPrompt === 'string' && systemPrompt.trim() !== '';
+  
+  // Parse outputSchema if provided
+  let parsedSchema = null;
+  if (typeof outputSchema === 'string' && outputSchema.trim() !== '') {
+    try {
+      parsedSchema = JSON.parse(outputSchema);
+    } catch (e) {
+      return "Invalid outputSchema: must be valid JSON.";
+    }
+  }
 
   // --- API Call ---
   try {
-    const response = fetchWithRetry("https://api.exa.ai/answer", {
-      method: "post",
-      contentType: "application/json",
-      payload: JSON.stringify({ query: finalPrompt }),
-      headers: { "x-api-key": apiKey, "x-exa-integration": "exa-for-sheets", "User-Agent": "exa-for-sheets 1.1" },
-      muteHttpExceptions: true
-    });
+    let response;
+    
+    if (hasSystemPrompt || parsedSchema) {
+      // Use chat completions endpoint when system prompt or output schema is provided
+      const messages = [];
+      if (hasSystemPrompt) {
+        messages.push({ role: "system", content: systemPrompt.trim() });
+      }
+      messages.push({ role: "user", content: finalPrompt });
+      
+      const payload = { model: "exa", messages: messages };
+      if (parsedSchema) {
+        payload.output_schema = parsedSchema;
+      }
+      
+      response = fetchWithRetry("https://api.exa.ai/chat/completions", {
+        method: "post",
+        contentType: "application/json",
+        payload: JSON.stringify(payload),
+        headers: { "Authorization": `Bearer ${apiKey}`, "x-exa-integration": "exa-for-sheets", "User-Agent": "exa-for-sheets 1.1" },
+        muteHttpExceptions: true
+      });
+    } else {
+      // Use standard /answer endpoint
+      response = fetchWithRetry("https://api.exa.ai/answer", {
+        method: "post",
+        contentType: "application/json",
+        payload: JSON.stringify({ query: finalPrompt }),
+        headers: { "x-api-key": apiKey, "x-exa-integration": "exa-for-sheets", "User-Agent": "exa-for-sheets 1.1" },
+        muteHttpExceptions: true
+      });
+    }
 
     const responseCode = response.getResponseCode();
     const responseBody = response.getContentText();
@@ -460,55 +500,66 @@ function EXA_ANSWER(prompt, prefix, suffix, includeCitations) {
     // --- Response Handling ---
     if (responseCode === 200) {
       const result = JSON.parse(responseBody);
-
-      if (result && typeof result.answer === 'string') {
-        const fullAnswerFromApi = result.answer;
-        let finalOutput = fullAnswerFromApi; // Default to the full answer
-
-        // Regex to match inline citations like " ([Source](URL))" or " ([Source](URL), [Source2](URL2))"
-        const inlineCitationRegex = /\s*\(\[([^\]]+)\]\(([^\)]+)\)(?:,\s*\[([^\]]+)\]\(([^\)]+)\))*\)/g;
-        
-        // Always strip inline citations from the answer text for cleaner output
-        const cleanAnswer = fullAnswerFromApi.replace(inlineCitationRegex, '').trim();
-        
-        if (!shouldShowFullAnswerWithCitations) {
-          // --- Default Behavior: Return clean answer without citations ---
-          finalOutput = cleanAnswer || fullAnswerFromApi.trim();
-
+      
+      let fullAnswerFromApi;
+      let citations = [];
+      const usedChatCompletions = hasSystemPrompt || parsedSchema;
+      
+      if (usedChatCompletions) {
+        // Chat completions response format
+        if (result.choices && result.choices[0] && result.choices[0].message) {
+          fullAnswerFromApi = result.choices[0].message.content;
+          citations = result.choices[0].message.citations || [];
         } else {
-          // --- Include Citations Behavior ---
-          // Return clean answer text, then append all citations at the end in a clear format
-          finalOutput = cleanAnswer || fullAnswerFromApi.trim();
-          
-          // Collect citations from the API's citations array
-          const allCitations = [];
-          
-          if (result.citations && Array.isArray(result.citations) && result.citations.length > 0) {
-            result.citations.forEach(citation => {
-              const title = citation.title || 'Source';
-              const url = citation.url;
-              if (url) {
-                allCitations.push(`[${title}](${url})`);
-              }
-            });
-          }
-          
-          // Append citations at the end with clear separation
-          if (allCitations.length > 0) {
-            finalOutput += '\n\nSources:\n' + allCitations.map((c, i) => `${i + 1}. ${c}`).join('\n');
-          }
+          return "API returned a valid response, but no message content was found.";
         }
-
-        return finalOutput.trim(); // Return the processed output
-
       } else {
-        return "API returned a valid response, but no 'answer' field (string) was found.";
+        // Standard /answer response format
+        if (result && typeof result.answer === 'string') {
+          fullAnswerFromApi = result.answer;
+          citations = result.citations || [];
+        } else {
+          return "API returned a valid response, but no 'answer' field (string) was found.";
+        }
       }
+
+      let finalOutput = fullAnswerFromApi;
+
+      // Regex to match inline citations like " ([Source](URL))" or " ([Source](URL), [Source2](URL2))"
+      const inlineCitationRegex = /\s*\(\[([^\]]+)\]\(([^\)]+)\)(?:,\s*\[([^\]]+)\]\(([^\)]+)\))*\)/g;
+      
+      // Always strip inline citations from the answer text for cleaner output
+      const cleanAnswer = fullAnswerFromApi.replace(inlineCitationRegex, '').trim();
+      
+      if (!shouldShowFullAnswerWithCitations) {
+        finalOutput = cleanAnswer || fullAnswerFromApi.trim();
+      } else {
+        finalOutput = cleanAnswer || fullAnswerFromApi.trim();
+        
+        const allCitations = [];
+        
+        if (Array.isArray(citations) && citations.length > 0) {
+          citations.forEach(citation => {
+            const title = citation.title || 'Source';
+            const url = citation.url;
+            if (url) {
+              allCitations.push(`[${title}](${url})`);
+            }
+          });
+        }
+        
+        if (allCitations.length > 0) {
+          finalOutput += '\n\nSources:\n' + allCitations.map((c, i) => `${i + 1}. ${c}`).join('\n');
+        }
+      }
+
+      return finalOutput.trim();
+
     } else if (responseCode === 401) {
       return "API Error: Invalid API Key.";
     } else if (responseCode === 429) {
       return "API Error: Rate limit exceeded. Please wait a moment and try again.";
-    } else { // Handle other errors
+    } else {
       let errorMessage = `API Error: Status ${responseCode}.`;
       try {
         const errorResult = JSON.parse(responseBody);

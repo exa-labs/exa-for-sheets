@@ -189,6 +189,7 @@ describe('EXA_ANSWER', () => {
       })
     });
 
+    // EXA_ANSWER(prompt, prefix, suffix, includeCitations, systemPrompt, outputSchema)
     const result = EXA_ANSWER('What is the capital of France?', '', '', true);
     
     expect(result).toContain('Paris is the capital of France.');

@@ -39,6 +39,21 @@ Added `category` parameter to filter results by content type. Available categori
 **Rate Limiting with Automatic Retry**
 API calls now automatically retry with exponential backoff when rate limited (HTTP 429). The add-on will retry up to 3 times with increasing delays, respecting the Retry-After header when provided.
 
+**System Prompt Support for EXA_ANSWER**
+Added `systemPrompt` parameter to EXA_ANSWER for controlling output format. Uses the Exa chat completions endpoint.
+
+```
+=EXA_ANSWER("Modal AI headcount", "", "", FALSE, "only return a number")
+=EXA_ANSWER("OpenAI CEO", "", "", FALSE, "respond in JSON format")
+```
+
+**Structured Output with Output Schema**
+Added `outputSchema` parameter to EXA_ANSWER for structured JSON responses. Generate schemas at https://dashboard.exa.ai/playground/answer
+
+```
+=EXA_ANSWER("employee count", "", "", FALSE, "", '{"type":"object","properties":{"value":{"type":"number"}},"required":["value"]}')
+```
+
 ### Improvements
 
 **Better Citation Formatting**
