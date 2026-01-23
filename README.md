@@ -7,8 +7,9 @@ This Google Apps Script integration brings the power of the Exa API directly int
 ## Features
 
 ### Custom Sheet Functions
-* **EXA_ANSWER:** Query the Exa AI to get answers to questions based on web search results
-* **EXA_SEARCH:** Search the web and retrieve a list of relevant URLs
+* **EXA:** Simplified function for quick data enrichment - just describe what you want
+* **EXA_ANSWER:** Query the Exa AI with advanced options (system prompts, structured output)
+* **EXA_SEARCH:** Search the web with domain and category filtering
 * **EXA_CONTENTS:** Extract the text content from specific URLs
 * **EXA_FINDSIMILAR:** Find URLs similar to a provided reference URL
 
@@ -16,6 +17,7 @@ This Google Apps Script integration brings the power of the Exa API directly int
 * **API Key Management:** Securely save your Exa API key
 * **Documentation:** Built-in reference for all Exa functions and their parameters
 * **Batch Refresh:** Refresh multiple Exa function cells at once
+* **Convert to Values:** Freeze results to prevent auto-refresh charges
 
 ## Setup & Installation
 
@@ -55,21 +57,43 @@ The sidebar offers three main tabs:
 
 ## Using Exa Functions
 
+### EXA (Simplified)
+```
+=EXA(prompt, [context])
+```
+The easiest way to enrich data. Just describe what information you want.
+
+**Examples:**
+```
+=EXA("Return the CEO name", A1)
+=EXA("Return the company website URL", A1)
+=EXA("Return the Amazon rating of this product", A1)
+```
+
 ### EXA_ANSWER
 ```
-=EXA_ANSWER(prompt, [prefix], [suffix], [includeCitations])
+=EXA_ANSWER(prompt, [prefix], [suffix], [includeCitations], [systemPrompt], [outputSchema], [returnRawJson])
 ```
-Generates an AI answer based on search results for your query.
+Advanced AI answers with full control over output format.
 
 **Parameters:**
 * `prompt` (required): The main question or prompt
 * `prefix` (optional): Text to add before the main prompt
 * `suffix` (optional): Text to add after the main prompt
 * `includeCitations` (optional): If TRUE, includes source citations (Default: FALSE)
+* `systemPrompt` (optional): Control output format (e.g., "only return a number")
+* `outputSchema` (optional): JSON schema for structured output. Generate at https://dashboard.exa.ai/playground/answer
+* `returnRawJson` (optional): If TRUE with outputSchema, returns raw JSON instead of extracted value
+
+**Examples:**
+```
+=EXA_ANSWER("OpenAI CEO", "", "", FALSE, "only return a name")
+=EXA_ANSWER("ceo of exa.ai", "", "", FALSE, "", "{""type"":""object"",""properties"":{""name"":{""type"":""string""}}}")
+```
 
 ### EXA_SEARCH
 ```
-=EXA_SEARCH(query, [numResults], [searchType], [prefix], [suffix])
+=EXA_SEARCH(query, [numResults], [searchType], [prefix], [suffix], [includeDomainsStr], [excludeDomainsStr], [category])
 ```
 Searches the web and returns a vertical list of URLs.
 
@@ -79,6 +103,15 @@ Searches the web and returns a vertical list of URLs.
 * `searchType` (optional): "auto", "neural", or "keyword" (Default: "auto")
 * `prefix` (optional): Text to add before the main query
 * `suffix` (optional): Text to add after the main query
+* `includeDomainsStr` (optional): Comma-separated domains to include (e.g., "linkedin.com,crunchbase.com")
+* `excludeDomainsStr` (optional): Comma-separated domains to exclude
+* `category` (optional): Filter by type - "company", "research paper", "news", "github", "tweet", "pdf", etc.
+
+**Examples:**
+```
+=EXA_SEARCH("AI startups", 5, "auto", "", "", "linkedin.com,crunchbase.com")
+=EXA_SEARCH("transformer architecture", 5, "auto", "", "", "", "", "research paper")
+```
 
 ### EXA_CONTENTS
 ```
@@ -116,6 +149,8 @@ To use batch refresh:
 * Exa API requests count against your Exa usage quota
 * For best performance, avoid excessive function calls in large sheets
 * Functions will automatically refresh when their inputs change or when the sheet is reopened
+* Use "Convert to Values" in the sidebar to freeze results and prevent auto-refresh charges
+* Rate limiting: The add-on automatically retries up to 3 times with exponential backoff on rate limit errors
 
 ---
 
@@ -146,4 +181,14 @@ To use batch refresh:
 4. Push the code:
    ```bash
    npm run push
+   ```
+
+5. Run tests:
+   ```bash
+   npm test
+   ```
+
+6. Bump version (updates package.json, Code.gs, and CHANGELOG.md):
+   ```bash
+   npm run bump patch  # or minor, major
    ```
