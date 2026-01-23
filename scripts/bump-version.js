@@ -2,12 +2,15 @@
 /**
  * Version bump script for Exa for Google Sheets
  * Syncs version across package.json, Code.gs, and CHANGELOG.md
+ * Optionally commits, tags, and pushes the release
  * 
- * Usage: node scripts/bump-version.js <major|minor|patch>
+ * Usage: node scripts/bump-version.js <major|minor|patch> [--tag]
+ *   --tag: Also commit, create git tag, and push
  */
 
 const fs = require('fs');
 const path = require('path');
+const { execSync } = require('child_process');
 
 const ROOT = path.join(__dirname, '..');
 
@@ -54,10 +57,28 @@ function updateChangelog(newVersion) {
   fs.writeFileSync(filePath, content);
 }
 
+function gitTag(version) {
+  const tagName = `v${version}`;
+  try {
+    execSync('git add package.json Code.gs CHANGELOG.md', { cwd: ROOT, stdio: 'inherit' });
+    execSync(`git commit -m "chore: bump version to ${version}"`, { cwd: ROOT, stdio: 'inherit' });
+    execSync(`git tag ${tagName}`, { cwd: ROOT, stdio: 'inherit' });
+    console.log(`\nCreated tag: ${tagName}`);
+    console.log('Run: git push && git push --tags');
+  } catch (err) {
+    console.error('Git operation failed:', err.message);
+    process.exit(1);
+  }
+}
+
 function main() {
-  const bumpType = process.argv[2];
-  if (!bumpType || !['major', 'minor', 'patch'].includes(bumpType)) {
-    console.error('Usage: node scripts/bump-version.js <major|minor|patch>');
+  const args = process.argv.slice(2);
+  const bumpType = args.find(a => ['major', 'minor', 'patch'].includes(a));
+  const shouldTag = args.includes('--tag');
+
+  if (!bumpType) {
+    console.error('Usage: node scripts/bump-version.js <major|minor|patch> [--tag]');
+    console.error('  --tag: Also commit and create git tag');
     process.exit(1);
   }
 
@@ -77,7 +98,13 @@ function main() {
   console.log('  Updated CHANGELOG.md');
 
   console.log(`\nVersion bumped to ${newVersion}`);
-  console.log('Run: git add -A && git commit -m "chore: bump version to ' + newVersion + '"');
+
+  if (shouldTag) {
+    gitTag(newVersion);
+  } else {
+    console.log('Run: git add -A && git commit -m "chore: bump version to ' + newVersion + '"');
+    console.log('Or use --tag flag to auto-commit and tag');
+  }
 }
 
 main();
