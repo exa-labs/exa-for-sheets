@@ -50,8 +50,14 @@ Added `systemPrompt` parameter to EXA_ANSWER for controlling output format. Uses
 **Structured Output with Output Schema**
 Added `outputSchema` parameter to EXA_ANSWER for structured JSON responses. Generate schemas at https://dashboard.exa.ai/playground/answer
 
+By default, when outputSchema is provided and the response has a single key, the value is extracted automatically. Use `returnRawJson=TRUE` to get the full JSON object.
+
 ```
-=EXA_ANSWER("employee count", "", "", FALSE, "", '{"type":"object","properties":{"value":{"type":"number"}},"required":["value"]}')
+=EXA_ANSWER("ceo of exa.ai", "", "", FALSE, "", '{"type":"object","properties":{"name":{"type":"string"}}}')
+→ Returns: "Will Bryk"
+
+=EXA_ANSWER("ceo of exa.ai", "", "", FALSE, "", '{"type":"object","properties":{"name":{"type":"string"}}}', TRUE)
+→ Returns: {"name": "Will Bryk"}
 ```
 
 ### Improvements

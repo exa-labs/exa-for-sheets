@@ -514,7 +514,8 @@
         <p><code>includeCitations</code> (boolean, optional): If TRUE, includes source citations. Defaults to FALSE.</p>
         <p><code>systemPrompt</code> (string, optional): System instructions to control output format (e.g., "only return a number"). Uses chat completions endpoint.</p>
         <p><code>outputSchema</code> (string, optional): JSON schema for structured output. <a href="https://dashboard.exa.ai/playground/answer" target="_blank">Generate schemas here</a>.</p>
-        <p><strong>Returns:</strong> The answer, or structured JSON if outputSchema is provided.</p>
+        <p><code>returnRawJson</code> (boolean, optional): If TRUE and outputSchema is provided, returns raw JSON instead of extracted value. Defaults to FALSE.</p>
+        <p><strong>Returns:</strong> The answer, extracted value from JSON schema, or raw JSON if returnRawJson is TRUE.</p>
         <p><strong>Examples:</strong></p>
         <p style="font-family: monospace; font-size: 0.85em; background-color: #F3F4F6; padding: 4px 8px; border-radius: 4px; margin: 4px 0;">=EXA_ANSWER("Modal AI headcount", "", "", FALSE, "only return a number")</p>
         <p style="font-family: monospace; font-size: 0.85em; background-color: #F3F4F6; padding: 4px 8px; border-radius: 4px; margin: 4px 0;">=EXA_ANSWER("OpenAI CEO", "", "", TRUE)</p>

@@ -433,10 +433,11 @@ function EXA(prompt, context) {
  * @param {boolean} [includeCitations=FALSE] Optional. If TRUE, appends source citations. Defaults to FALSE.
  * @param {string} [systemPrompt=""] Optional. System instructions to control output format (e.g., "only return a number"). Uses chat completions endpoint.
  * @param {string} [outputSchema=""] Optional. JSON schema for structured output (e.g., '{"type":"object","properties":{"value":{"type":"number"}},"required":["value"]}').
+ * @param {boolean} [returnRawJson=FALSE] Optional. If TRUE and outputSchema is provided, returns raw JSON instead of extracted value.
  * @return {string} The answer, or structured JSON if outputSchema is provided.
  * @customfunction
  */
-function EXA_ANSWER(prompt, prefix, suffix, includeCitations, systemPrompt, outputSchema) {
+function EXA_ANSWER(prompt, prefix, suffix, includeCitations, systemPrompt, outputSchema, returnRawJson) {
   const apiKey = getApiKey();
   if (!apiKey) return "No API key set. Please set your API key in the Exa AI sidebar.";
 
@@ -515,13 +516,17 @@ function EXA_ANSWER(prompt, prefix, suffix, includeCitations, systemPrompt, outp
           if (parsedSchema) {
             try {
               const jsonResponse = JSON.parse(messageContent);
-              // If it's an object with a single key, return just the value
-              const keys = Object.keys(jsonResponse);
-              if (keys.length === 1) {
-                fullAnswerFromApi = String(jsonResponse[keys[0]]);
-              } else {
-                // Multiple keys - return formatted JSON
+              // If returnRawJson is true, return the formatted JSON
+              if (returnRawJson === true) {
                 fullAnswerFromApi = JSON.stringify(jsonResponse, null, 2);
+              } else {
+                // Extract value: if single key, return just the value; otherwise return formatted JSON
+                const keys = Object.keys(jsonResponse);
+                if (keys.length === 1) {
+                  fullAnswerFromApi = String(jsonResponse[keys[0]]);
+                } else {
+                  fullAnswerFromApi = JSON.stringify(jsonResponse, null, 2);
+                }
               }
             } catch (e) {
               // If JSON parsing fails, return the raw content
