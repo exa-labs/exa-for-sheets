@@ -1,9 +1,10 @@
 {
   "name": "exa-sheets",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Exa API integration for Google Sheets",
   "main": "Code.gs",
   "scripts": {
+    "bump": "node scripts/bump-version.js",
     "login": "clasp login",
     "create": "clasp create --type standalone --title \"Exa for Sheets\"",
     "push": "clasp push -f",
@@ -13,7 +14,8 @@
     "logs": "clasp logs",
     "watch": "clasp push --watch",
     "version": "clasp version",
-    "versions": "clasp versions"
+    "versions": "clasp versions",
+    "test": "jest"
   },
   "keywords": [
     "google-sheets",
@@ -25,7 +27,8 @@
   "author": "",
   "license": "MIT",
   "devDependencies": {
-    "@google/clasp": "^2.4.2"
+    "@google/clasp": "^2.4.2",
+    "jest": "^30.2.0"
   },
   "engines": {
     "node": ">=14.0.0"

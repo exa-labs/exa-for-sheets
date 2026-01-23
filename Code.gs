@@ -1,3 +1,52 @@
+// Rate limiting configuration
+var RATE_LIMIT_CONFIG = {
+  maxRetries: 3,
+  initialDelayMs: 1000,
+  maxDelayMs: 10000
+};
+
+/**
+ * Makes an HTTP request with exponential backoff retry on rate limit (429) errors.
+ * @param {string} url The URL to fetch
+ * @param {Object} options UrlFetchApp options
+ * @return {HTTPResponse} The response object
+ */
+function fetchWithRetry(url, options) {
+  var lastError = null;
+  var delay = RATE_LIMIT_CONFIG.initialDelayMs;
+  
+  for (var attempt = 0; attempt <= RATE_LIMIT_CONFIG.maxRetries; attempt++) {
+    var response = UrlFetchApp.fetch(url, options);
+    var code = response.getResponseCode();
+    
+    if (code !== 429) {
+      return response;
+    }
+    
+    // Rate limited - check if we should retry
+    if (attempt >= RATE_LIMIT_CONFIG.maxRetries) {
+      return response; // Return the 429 response after max retries
+    }
+    
+    // Check for Retry-After header
+    var retryAfter = response.getHeaders()['Retry-After'];
+    if (retryAfter) {
+      delay = parseInt(retryAfter, 10) * 1000;
+    }
+    
+    // Cap the delay
+    delay = Math.min(delay, RATE_LIMIT_CONFIG.maxDelayMs);
+    
+    Logger.log('Rate limited (429). Retrying in ' + delay + 'ms (attempt ' + (attempt + 1) + '/' + RATE_LIMIT_CONFIG.maxRetries + ')');
+    Utilities.sleep(delay);
+    
+    // Exponential backoff for next attempt
+    delay = delay * 2;
+  }
+  
+  return response;
+}
+
 function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('Exa AI')
@@ -16,7 +65,7 @@ function showSidebar() {
 function showAbout() {
   var ui = SpreadsheetApp.getUi();
   var message = 'Exa AI for Google Sheets\n\n' +
-                'Version: 1.0.0\n\n' +
+                'Version: 2.0.0\n\n' +
                 'This add-on provides powerful AI-driven search and analysis capabilities using the Exa API.\n\n' +
                 'Key Features:\n' +
                 '- EXA_ANSWER: Generate AI answers from web searches\n' +
@@ -349,18 +398,46 @@ function ensureAuthorized() {
 }
 
 /**
+ * Simple AI-powered data enrichment using Exa. This is the recommended function for most use cases.
+ * Just describe what information you want about the data in the referenced cell.
+ * 
+ * Examples:
+ *   =EXA("Return only the company website URL", A1)
+ *   =EXA("Return only the company headcount", A1)
+ *   =EXA("Return only the CEO name", A1)
+ *   =EXA("Return the Amazon rating of this product", A1)
+ *
+ * For advanced options (system prompt, output schema, citations), use EXA_ANSWER instead.
+ *
+ * @param {string} prompt What information you want (e.g., "Return only the company website URL").
+ * @param {string} [context=""] Optional. Cell reference or text to enrich (e.g., company name in A1).
+ * @return {string} The requested information or an error message.
+ * @customfunction
+ */
+function EXA(prompt, context) {
+  // Build the full prompt by combining the instruction with the context
+  const fullPrompt = context ? `${prompt}: ${context}` : prompt;
+  return EXA_ANSWER(fullPrompt);
+}
+
+/**
  * Queries the Exa /answer endpoint to provide an AI-generated answer based on search results.
  * Allows adding prefix/suffix text and optionally includes source citations.
  * By default, extracts and returns only the core answer text before any inline citations like " ([Source](URL)...)".
  *
+ * For structured output, generate schemas at: https://dashboard.exa.ai/playground/answer
+ *
  * @param {string} prompt The main question or prompt to send to Exa. Can be a cell reference.
  * @param {string} [prefix=""] Optional. Text to add before the main prompt.
  * @param {string} [suffix=""] Optional. Text to add after the main prompt.
- * @param {boolean} [includeCitations=FALSE] Optional. If TRUE, returns the full answer string as received from the API (including inline citations) AND appends any additional citations from the API's 'citations' array. Defaults to FALSE (extracts core answer only).
- * @return {string} The core answer, the full answer with citations, or an error message.
+ * @param {boolean} [includeCitations=FALSE] Optional. If TRUE, appends source citations. Defaults to FALSE.
+ * @param {string} [systemPrompt=""] Optional. System instructions to control output format (e.g., "only return a number"). Uses chat completions endpoint.
+ * @param {string} [outputSchema=""] Optional. JSON schema for structured output (e.g., '{"type":"object","properties":{"value":{"type":"number"}},"required":["value"]}').
+ * @param {boolean} [returnRawJson=FALSE] Optional. If TRUE and outputSchema is provided, returns raw JSON instead of extracted value.
+ * @return {string} The answer, or structured JSON if outputSchema is provided.
  * @customfunction
  */
-function EXA_ANSWER(prompt, prefix, suffix, includeCitations) {
+function EXA_ANSWER(prompt, prefix, suffix, includeCitations, systemPrompt, outputSchema, returnRawJson) {
   const apiKey = getApiKey();
   if (!apiKey) return "No API key set. Please set your API key in the Exa AI sidebar.";
 
@@ -370,18 +447,52 @@ function EXA_ANSWER(prompt, prefix, suffix, includeCitations) {
   }
 
   const finalPrompt = `${prefix || ''} ${prompt} ${suffix || ''}`.trim();
-  // Explicitly check if includeCitations is exactly TRUE.
   const shouldShowFullAnswerWithCitations = includeCitations === true;
+  const hasSystemPrompt = typeof systemPrompt === 'string' && systemPrompt.trim() !== '';
+  
+  // Parse outputSchema if provided
+  let parsedSchema = null;
+  if (typeof outputSchema === 'string' && outputSchema.trim() !== '') {
+    try {
+      parsedSchema = JSON.parse(outputSchema);
+    } catch (e) {
+      return "Invalid outputSchema: must be valid JSON.";
+    }
+  }
 
   // --- API Call ---
   try {
-    const response = UrlFetchApp.fetch("https://api.exa.ai/answer", {
-      method: "post",
-      contentType: "application/json",
-      payload: JSON.stringify({ query: finalPrompt }),
-      headers: { "x-api-key": apiKey, "x-exa-integration": "exa-for-sheets", "User-Agent": "exa-for-sheets 1.0" },
-      muteHttpExceptions: true
-    });
+    let response;
+    
+    if (hasSystemPrompt && !parsedSchema) {
+      // Use chat completions endpoint ONLY for system prompt without output schema
+      const messages = [
+        { role: "system", content: systemPrompt.trim() },
+        { role: "user", content: finalPrompt }
+      ];
+      
+      response = fetchWithRetry("https://api.exa.ai/chat/completions", {
+        method: "post",
+        contentType: "application/json",
+        payload: JSON.stringify({ model: "exa", messages: messages }),
+        headers: { "Authorization": `Bearer ${apiKey}`, "x-exa-integration": "exa-for-sheets", "User-Agent": "exa-for-sheets 1.1" },
+        muteHttpExceptions: true
+      });
+    } else {
+      // Use /answer endpoint (with optional output_schema)
+      const answerPayload = { query: finalPrompt };
+      if (parsedSchema) {
+        answerPayload.output_schema = parsedSchema;
+      }
+      
+      response = fetchWithRetry("https://api.exa.ai/answer", {
+        method: "post",
+        contentType: "application/json",
+        payload: JSON.stringify(answerPayload),
+        headers: { "x-api-key": apiKey, "x-exa-integration": "exa-for-sheets", "User-Agent": "exa-for-sheets 1.1" },
+        muteHttpExceptions: true
+      });
+    }
 
     const responseCode = response.getResponseCode();
     const responseBody = response.getContentText();
@@ -389,53 +500,82 @@ function EXA_ANSWER(prompt, prefix, suffix, includeCitations) {
     // --- Response Handling ---
     if (responseCode === 200) {
       const result = JSON.parse(responseBody);
-
-      if (result && typeof result.answer === 'string') {
-        const fullAnswerFromApi = result.answer;
-        let finalOutput = fullAnswerFromApi; // Default to the full answer
-
-        if (!shouldShowFullAnswerWithCitations) {
-          // --- Default Behavior: Strip Inline Citations ---
-          // Remove inline citation patterns like " ([Source](URL))" or " ([Source](URL), [Source2](URL2))"
-          // This regex matches citations in the format: space followed by opening paren, bracket, content, closing bracket, paren
-          // It handles multiple consecutive citations separated by commas
-          finalOutput = fullAnswerFromApi.replace(/\s+\(\[([^\]]+)\]\([^\)]+\)(?:,\s*\[([^\]]+)\]\([^\)]+\))*\)/g, '').trim();
-
-          // If no inline citations were found, use the full answer
-          if (finalOutput === '') {
-            finalOutput = fullAnswerFromApi.trim();
-          }
-
+      
+      let fullAnswerFromApi;
+      let citations = [];
+      const usedChatCompletions = hasSystemPrompt && !parsedSchema;
+      
+      if (usedChatCompletions) {
+        // Chat completions response format (only for systemPrompt without outputSchema)
+        if (result.choices && result.choices[0] && result.choices[0].message) {
+          fullAnswerFromApi = result.choices[0].message.content;
+          citations = result.choices[0].message.citations || [];
         } else {
-          // --- Include Citations Behavior ---
-          // Use the full answer from API, and append from the citations array if present
-           finalOutput = fullAnswerFromApi.trim(); // Start with the full API answer
-
-           if (result.citations && Array.isArray(result.citations) && result.citations.length > 0) {
-              const formattedCitations = result.citations.map(citation => {
-                  const title = citation.title || 'Source';
-                  const url = citation.url;
-                  return url ? `([${title}](${url}))` : null;
-              })
-              .filter(c => c !== null)
-              .join(', ');
-
-              if (formattedCitations.length > 0) {
-                  const separator = (finalOutput.slice(-1) !== ' ' && finalOutput.slice(-1) !== '\n') ? ' ' : '';
-                  finalOutput += separator + formattedCitations; // Append the extra citations
-              }
-           }
-           // If includeCitations is true but no citations array, finalOutput remains the fullAnswerFromApi
+          return "API returned a valid response, but no message content was found.";
         }
-
-        return finalOutput.trim(); // Return the processed output
-
       } else {
-        return "API returned a valid response, but no 'answer' field (string) was found.";
+        // /answer endpoint response format
+        citations = result.citations || [];
+        
+        if (parsedSchema && result.answer && typeof result.answer === 'object') {
+          // Structured output: answer is an object with schema fields
+          const answerObj = result.answer;
+          if (returnRawJson === true) {
+            fullAnswerFromApi = JSON.stringify(answerObj, null, 2);
+          } else {
+            // Extract value: if single key, return just the value; otherwise return formatted JSON
+            const keys = Object.keys(answerObj);
+            if (keys.length === 1) {
+              fullAnswerFromApi = String(answerObj[keys[0]]);
+            } else {
+              fullAnswerFromApi = JSON.stringify(answerObj, null, 2);
+            }
+          }
+        } else if (result && typeof result.answer === 'string') {
+          // Standard text answer
+          fullAnswerFromApi = result.answer;
+        } else {
+          return "API returned a valid response, but no 'answer' field was found.";
+        }
       }
+
+      let finalOutput = fullAnswerFromApi;
+
+      // Regex to match inline citations like " ([Source](URL))" or " ([Source](URL), [Source2](URL2))"
+      const inlineCitationRegex = /\s*\(\[([^\]]+)\]\(([^\)]+)\)(?:,\s*\[([^\]]+)\]\(([^\)]+)\))*\)/g;
+      
+      // Always strip inline citations from the answer text for cleaner output
+      const cleanAnswer = fullAnswerFromApi.replace(inlineCitationRegex, '').trim();
+      
+      if (!shouldShowFullAnswerWithCitations) {
+        finalOutput = cleanAnswer || fullAnswerFromApi.trim();
+      } else {
+        finalOutput = cleanAnswer || fullAnswerFromApi.trim();
+        
+        const allCitations = [];
+        
+        if (Array.isArray(citations) && citations.length > 0) {
+          citations.forEach(citation => {
+            const title = citation.title || 'Source';
+            const url = citation.url;
+            if (url) {
+              allCitations.push(`[${title}](${url})`);
+            }
+          });
+        }
+        
+        if (allCitations.length > 0) {
+          finalOutput += '\n\nSources:\n' + allCitations.map((c, i) => `${i + 1}. ${c}`).join('\n');
+        }
+      }
+
+      return finalOutput.trim();
+
     } else if (responseCode === 401) {
       return "API Error: Invalid API Key.";
-    } else { // Handle other errors
+    } else if (responseCode === 429) {
+      return "API Error: Rate limit exceeded. Please wait a moment and try again.";
+    } else {
       let errorMessage = `API Error: Status ${responseCode}.`;
       try {
         const errorResult = JSON.parse(responseBody);
@@ -468,11 +608,11 @@ function EXA_CONTENTS(url) {
   }
 
   try {
-    const response = UrlFetchApp.fetch("https://api.exa.ai/contents", {
+    const response = fetchWithRetry("https://api.exa.ai/contents", {
       method: "post",
       contentType: "application/json",
-      payload: JSON.stringify({ urls: [url] }), // Exa's /contents endpoint expects an array of URLs
-      headers: { "x-api-key": apiKey, "x-exa-integration": "exa-for-sheets", "User-Agent": "exa-for-sheets 1.0" },
+      payload: JSON.stringify({ urls: [url] }),
+      headers: { "x-api-key": apiKey, "x-exa-integration": "exa-for-sheets", "User-Agent": "exa-for-sheets 1.1" },
       muteHttpExceptions: true
     });
 
@@ -481,18 +621,17 @@ function EXA_CONTENTS(url) {
 
     if (responseCode === 200) {
         const result = JSON.parse(responseBody);
-        // The response structure for /contents typically wraps results in a 'results' array
         const contentData = result.results && result.results[0];
         if (contentData) {
-            // Prioritize text content based on Exa's common response structure
             return (contentData.text || contentData.highlights || "No relevant content found in response.").trim();
         } else {
             return "API returned successfully, but no content data found for this URL.";
         }
     } else if (responseCode === 401) {
         return "API Error: Invalid API Key. Please check your key in the menu.";
+    } else if (responseCode === 429) {
+        return "API Error: Rate limit exceeded. Please wait a moment and try again.";
     } else {
-        // Try to parse error message from API if possible, otherwise return generic error
         let errorMessage = `API Error: Received status code ${responseCode}.`;
         try {
             const errorResult = JSON.parse(responseBody);
@@ -574,11 +713,11 @@ function EXA_FINDSIMILAR(url, numResults, includeDomainsStr, excludeDomainsStr, 
 
   // --- API Call and Response Handling ---
   try {
-    const response = UrlFetchApp.fetch("https://api.exa.ai/findSimilar", {
+    const response = fetchWithRetry("https://api.exa.ai/findSimilar", {
       method: "post",
       contentType: "application/json",
       payload: JSON.stringify(payload),
-      headers: { "x-api-key": apiKey, "x-exa-integration": "exa-for-sheets", "User-Agent": "exa-for-sheets 1.0" },
+      headers: { "x-api-key": apiKey, "x-exa-integration": "exa-for-sheets", "User-Agent": "exa-for-sheets 1.1" },
       muteHttpExceptions: true
     });
 
@@ -588,14 +727,15 @@ function EXA_FINDSIMILAR(url, numResults, includeDomainsStr, excludeDomainsStr, 
     if (responseCode === 200) {
       const result = JSON.parse(responseBody);
       if (result && result.results && result.results.length > 0) {
-        return result.results.map(item => [item.url || "N/A"]); // Map URLs, provide fallback
+        return result.results.map(item => [item.url || "N/A"]);
       } else {
         return [["No similar URLs found matching the criteria."]];
       }
     } else if (responseCode === 401) {
       return [["API Error: Invalid API Key."]];
+    } else if (responseCode === 429) {
+      return [["API Error: Rate limit exceeded. Please wait a moment and try again."]];
     } else if (responseCode === 400) {
-        // Handle potential bad request errors (e.g., invalid filters)
         let errorMessage = `API Error (Bad Request): Status ${responseCode}.`;
         try {
             const errorResult = JSON.parse(responseBody);
@@ -604,8 +744,7 @@ function EXA_FINDSIMILAR(url, numResults, includeDomainsStr, excludeDomainsStr, 
             errorMessage += ` Response: ${responseBody}`;
         }
         return [[errorMessage]];
-    }
-    else { // Handle other errors
+    } else {
       let errorMessage = `API Error: Status ${responseCode}.`;
       try {
         const errorResult = JSON.parse(responseBody);
@@ -616,8 +755,7 @@ function EXA_FINDSIMILAR(url, numResults, includeDomainsStr, excludeDomainsStr, 
       return [[errorMessage]];
     }
   } catch (e) {
-    // Catch script execution errors (e.g., network issues)
-    Logger.log(`EXA_FINDSIMILAR Error: ${e} for payload: ${JSON.stringify(payload)}`); // Log for debugging
+    Logger.log(`EXA_FINDSIMILAR Error: ${e} for payload: ${JSON.stringify(payload)}`);
     return [[`Script Error: ${e.message}`]];
   }
 }
@@ -631,10 +769,13 @@ function EXA_FINDSIMILAR(url, numResults, includeDomainsStr, excludeDomainsStr, 
  * @param {string} [searchType="auto"] Optional. The type of search ('auto', 'neural', 'keyword'). Defaults to 'auto'.
  * @param {string} [prefix=""] Optional. Text to add before the main query.
  * @param {string} [suffix=""] Optional. Text to add after the main query.
+ * @param {string} [includeDomainsStr=""] Optional. Comma-separated list of domains to restrict results to (e.g., "linkedin.com,crunchbase.com").
+ * @param {string} [excludeDomainsStr=""] Optional. Comma-separated list of domains to exclude from results (e.g., "wikipedia.org,reddit.com").
+ * @param {string} [category=""] Optional. Filter by content category: "company", "research paper", "news", "github", "tweet", "personal site", "pdf", "financial report", "people".
  * @return {string[]} An array of result URLs or a single cell error message.
  * @customfunction
  */
-function EXA_SEARCH(query, numResults, searchType, prefix, suffix) {
+function EXA_SEARCH(query, numResults, searchType, prefix, suffix, includeDomainsStr, excludeDomainsStr, category) {
   const apiKey = getApiKey();
   if (!apiKey) return [["No API key set. Please set your API key in the Exa AI sidebar."]];
 
@@ -648,33 +789,64 @@ function EXA_SEARCH(query, numResults, searchType, prefix, suffix) {
   const count = (typeof numResults === 'number' && numResults > 0 && numResults <= 10) ? Math.floor(numResults) : 1; // Default to 1, max 10 for free tier
   const type = (searchType && ['auto', 'neural', 'keyword'].includes(searchType)) ? searchType : 'auto'; // Default to 'auto'
 
+  // Process domain lists (comma-separated string to array)
+  const processDomains = (domainStr) => {
+    if (typeof domainStr === 'string' && domainStr.trim() !== '') {
+      return domainStr.split(',').map(d => d.trim()).filter(d => d.length > 0);
+    }
+    return null;
+  };
+
+  const includeDomains = processDomains(includeDomainsStr);
+  const excludeDomains = processDomains(excludeDomainsStr);
+
+  // Validate category if provided
+  const validCategories = ['company', 'research paper', 'news', 'github', 'tweet', 'personal site', 'pdf', 'financial report', 'people'];
+  const categoryValue = (typeof category === 'string' && category.trim() !== '' && validCategories.includes(category.toLowerCase())) 
+    ? category.toLowerCase() 
+    : null;
+
+  // Build payload
+  const payload = {
+    query: finalQuery,
+    numResults: count,
+    type: type,
+    useAutoprompt: (type !== 'keyword')
+  };
+
+  if (includeDomains && includeDomains.length > 0) {
+    payload.includeDomains = includeDomains;
+  }
+  if (excludeDomains && excludeDomains.length > 0) {
+    payload.excludeDomains = excludeDomains;
+  }
+  if (categoryValue) {
+    payload.category = categoryValue;
+  }
+
   try {
-    const response = UrlFetchApp.fetch("https://api.exa.ai/search", {
+    const response = fetchWithRetry("https://api.exa.ai/search", {
       method: "post",
       contentType: "application/json",
-      payload: JSON.stringify({
-        query: finalQuery,
-        numResults: count,
-        type: type,
-        useAutoprompt: (type !== 'keyword') // Enable autoprompt for neural/auto by default
-      }),
-      headers: { "x-api-key": apiKey, "x-exa-integration": "exa-for-sheets", "User-Agent": "exa-for-sheets 1.0" },
+      payload: JSON.stringify(payload),
+      headers: { "x-api-key": apiKey, "x-exa-integration": "exa-for-sheets", "User-Agent": "exa-for-sheets 1.1" },
       muteHttpExceptions: true
     });
 
     const responseCode = response.getResponseCode();
     const responseBody = response.getContentText();
 
-     if (responseCode === 200) {
+    if (responseCode === 200) {
       const result = JSON.parse(responseBody);
       if (result && result.results && result.results.length > 0) {
-        // Map results to a 2D array for vertical spill
         return result.results.map(item => [item.url]);
       } else {
         return [["API returned successfully, but no search results found."]];
       }
     } else if (responseCode === 401) {
-      return [["❌ API Error: Invalid API Key. Please check your key in the menu."]];
+      return [["API Error: Invalid API Key. Please check your key in the menu."]];
+    } else if (responseCode === 429) {
+      return [["API Error: Rate limit exceeded. Please wait a moment and try again."]];
     } else {
       let errorMessage = `API Error: Status ${responseCode}.`;
       try {
@@ -716,7 +888,8 @@ function processBatchOperation(operation) {
     
     formulas.forEach((row, rowIndex) => {
       row.forEach((formula, colIndex) => {
-        if (formula && formula.toUpperCase().match(/^=EXA_/)) {
+        // Match =EXA( or =EXA_ to include both simplified EXA() and EXA_ANSWER, EXA_SEARCH, etc.
+        if (formula && formula.toUpperCase().match(/^=EXA[_(]/)) {
           exaCells.push({
             cell: selection.getCell(rowIndex + 1, colIndex + 1),
             formula: formula,
@@ -784,6 +957,75 @@ function processBatchOperation(operation) {
     
   } catch (e) {
     Logger.log(`Error in processBatchOperation: ${e}`);
+    return { 
+      success: false, 
+      message: `Operation failed: ${e.message}`
+    };
+  }
+}
+
+/**
+ * Converts selected cells containing Exa functions to their static values.
+ * This prevents automatic recalculation and unexpected API charges.
+ * The formulas are replaced with their current values, so they won't refresh.
+ * 
+ * @return {Object} Result object with success flag and message
+ */
+function convertToValues() {
+  try {
+    const sheet = SpreadsheetApp.getActiveSheet();
+    const selection = sheet.getActiveRange();
+    
+    if (!selection) {
+      return { 
+        success: false, 
+        message: 'No cells selected. Please select cells containing Exa functions.'
+      };
+    }
+    
+    const formulas = selection.getFormulas();
+    const values = selection.getValues();
+    const exaCells = [];
+    
+    formulas.forEach((row, rowIndex) => {
+      row.forEach((formula, colIndex) => {
+        // Match =EXA( or =EXA_ to include both simplified EXA() and EXA_ANSWER, EXA_SEARCH, etc.
+        if (formula && formula.toUpperCase().match(/^=EXA[_(]/)) {
+          exaCells.push({
+            row: rowIndex,
+            col: colIndex,
+            formula: formula,
+            value: values[rowIndex][colIndex]
+          });
+        }
+      });
+    });
+    
+    if (exaCells.length === 0) {
+      const totalCells = formulas.flat().length;
+      const cellText = totalCells === 1 ? 'cell' : 'cells';
+      return { 
+        success: false, 
+        message: `No Exa functions found in the ${totalCells} selected ${cellText}.`
+      };
+    }
+    
+    // Replace formulas with their values
+    exaCells.forEach(item => {
+      const cell = selection.getCell(item.row + 1, item.col + 1);
+      cell.setValue(item.value);
+    });
+    
+    SpreadsheetApp.flush();
+    
+    const cellText = exaCells.length === 1 ? 'cell' : 'cells';
+    return { 
+      success: true, 
+      message: `Converted ${exaCells.length} ${cellText} to static values. These cells will no longer auto-refresh.`
+    };
+    
+  } catch (e) {
+    Logger.log(`Error in convertToValues: ${e}`);
     return { 
       success: false, 
       message: `Operation failed: ${e.message}`

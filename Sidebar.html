@@ -457,30 +457,68 @@
 
     <!-- Batch Operations Tab -->
     <div id="batchTab" class="tab-content">
-      <h3>Batch Refresh</h3>
+      <h3>Batch Operations</h3>
       
       <div class="batch-buttons">
         <button id="refreshSelected" onclick="performBatchOperation('refresh')">Refresh Selected Cells</button>
+        <button id="convertToValues" onclick="convertSelectedToValues()" style="background-color: #059669;">Convert to Values (Freeze)</button>
       </div>
       
       <div id="batchStatus" class="status-display">
-        Select cells containing Exa functions and click refresh.
+        Select cells containing Exa functions and choose an operation.
+      </div>
+      
+      <div style="margin-top: 15px; padding: 12px; background-color: #FEF3C7; border: 1px solid #F59E0B; border-radius: 6px; font-size: 0.85em;">
+        <strong style="color: #92400E;">Tip: Prevent unexpected charges</strong>
+        <p style="margin: 8px 0 0 0; color: #78350F; line-height: 1.4;">
+          Exa functions automatically recalculate when the sheet refreshes. Use <strong>"Convert to Values"</strong> to freeze results and prevent additional API calls. You can always re-add the formula later if you need fresh data.
+        </p>
       </div>
     </div>
 
     <!-- Documentation Tab -->
     <div id="docsTab" class="tab-content">
       <h3>Documentation</h3>
+      
+      <div class="doc-section" style="background-color: #FEF3C7; border: 1px solid #F59E0B; border-radius: 6px; padding: 12px; margin-bottom: 20px;">
+        <h4 style="color: #92400E; margin-top: 0;">Important: Controlling API Usage</h4>
+        <p style="color: #78350F;"><strong>Auto-refresh behavior:</strong> Exa functions automatically recalculate when you open the sheet, edit cells, or when Google Sheets refreshes. Each recalculation uses API credits.</p>
+        <p style="color: #78350F;"><strong>To prevent unexpected charges:</strong></p>
+        <p style="color: #78350F;">1. Use the <code>numResults</code> parameter to limit results (e.g., <code>=EXA_SEARCH("query", 3)</code> returns only 3 URLs)</p>
+        <p style="color: #78350F;">2. After getting results, copy cells and "Paste as Values" (Ctrl+Shift+V) to freeze them</p>
+        <p style="color: #78350F;">3. Remove your API key from the sidebar when not actively using the add-on</p>
+        <p style="color: #78350F;"><strong>Tip:</strong> Start with small batches (10-20 rows) before scaling up to hundreds of rows.</p>
+      </div>
+
+      <div class="doc-section" style="background-color: #EFF6FF; border: 1px solid #3B82F6; border-radius: 6px; padding: 12px;">
+        <h4 style="color: #1D4ED8; margin-top: 0;">EXA (Recommended)</h4>
+        <p>Simple AI-powered data enrichment. Just describe what you want!</p>
+        <p><strong>Parameters:</strong></p>
+        <p><code>prompt</code> (string, required): What information you want.</p>
+        <p><code>context</code> (string/cell, optional): The data to enrich (e.g., company name in A1).</p>
+        <p><strong>Examples:</strong></p>
+        <p style="font-family: monospace; font-size: 0.85em; background-color: #F3F4F6; padding: 4px 8px; border-radius: 4px; margin: 4px 0;">=EXA("Return only the company website URL", A1)</p>
+        <p style="font-family: monospace; font-size: 0.85em; background-color: #F3F4F6; padding: 4px 8px; border-radius: 4px; margin: 4px 0;">=EXA("Return only the company headcount", A1)</p>
+        <p style="font-family: monospace; font-size: 0.85em; background-color: #F3F4F6; padding: 4px 8px; border-radius: 4px; margin: 4px 0;">=EXA("Return only the CEO name", A1)</p>
+        <p style="font-family: monospace; font-size: 0.85em; background-color: #F3F4F6; padding: 4px 8px; border-radius: 4px; margin: 4px 0;">=EXA("Return the Amazon rating of this product", A1)</p>
+        <p style="margin-top: 8px;"><em>For advanced options (system prompt, output schema, citations), use EXA_ANSWER.</em></p>
+      </div>
 
       <div class="doc-section">
         <h4>EXA_ANSWER</h4>
-        <p>Queries Exa /answer endpoint for an AI-generated answer based on search results.</p>
+        <p>Advanced version with system prompt, output schema, and citation options.</p>
         <p><strong>Parameters:</strong></p>
         <p><code>prompt</code> (string, required): The main question/prompt.</p>
         <p><code>prefix</code> (string, optional): Text added before the prompt.</p>
         <p><code>suffix</code> (string, optional): Text added after the prompt.</p>
         <p><code>includeCitations</code> (boolean, optional): If TRUE, includes source citations. Defaults to FALSE.</p>
-        <p><strong>Returns:</strong> The core answer or full answer with citations.</p>
+        <p><code>systemPrompt</code> (string, optional): System instructions to control output format (e.g., "only return a number"). Uses chat completions endpoint.</p>
+        <p><code>outputSchema</code> (string, optional): JSON schema for structured output. <a href="https://dashboard.exa.ai/playground/answer" target="_blank">Generate schemas here</a>.</p>
+        <p><code>returnRawJson</code> (boolean, optional): If TRUE and outputSchema is provided, returns raw JSON instead of extracted value. Defaults to FALSE.</p>
+        <p><strong>Returns:</strong> The answer, extracted value from JSON schema, or raw JSON if returnRawJson is TRUE.</p>
+        <p><strong>Examples:</strong></p>
+        <p style="font-family: monospace; font-size: 0.85em; background-color: #F3F4F6; padding: 4px 8px; border-radius: 4px; margin: 4px 0;">=EXA_ANSWER("Modal AI headcount", "", "", FALSE, "only return a number")</p>
+        <p style="font-family: monospace; font-size: 0.85em; background-color: #F3F4F6; padding: 4px 8px; border-radius: 4px; margin: 4px 0;">=EXA_ANSWER("OpenAI CEO", "", "", TRUE)</p>
       </div>
 
       <div class="doc-section">
@@ -500,6 +538,9 @@
         <p><code>searchType</code> (string, optional): 'auto', 'neural', or 'keyword'. Defaults to 'auto'.</p>
         <p><code>prefix</code> (string, optional): Text added before the query.</p>
         <p><code>suffix</code> (string, optional): Text added after the query.</p>
+        <p><code>includeDomainsStr</code> (string, optional): Comma-separated domains to include (e.g., "linkedin.com,crunchbase.com").</p>
+        <p><code>excludeDomainsStr</code> (string, optional): Comma-separated domains to exclude (e.g., "wikipedia.org").</p>
+        <p><code>category</code> (string, optional): Filter by content type: "company", "research paper", "news", "github", "tweet", "personal site", "pdf", "financial report", "people".</p>
         <p><strong>Returns:</strong> A vertical list of result URLs.</p>
       </div>
 
@@ -787,8 +828,9 @@
       function performBatchOperation(operation) {
         const batchStatusDiv = document.getElementById('batchStatus');
         
-        // Disable button during operation
+        // Disable buttons during operation
         document.getElementById('refreshSelected').disabled = true;
+        document.getElementById('convertToValues').disabled = true;
         
         // Update status
         batchStatusDiv.textContent = 'Processing...';
@@ -801,16 +843,51 @@
               batchStatusDiv.textContent = `${result.message}`;
             }
             
-            // Re-enable button
+            // Re-enable buttons
             document.getElementById('refreshSelected').disabled = false;
+            document.getElementById('convertToValues').disabled = false;
           })
           .withFailureHandler(error => {
             batchStatusDiv.textContent = `Error: ${error.message || error}`;
             
-            // Re-enable button
+            // Re-enable buttons
             document.getElementById('refreshSelected').disabled = false;
+            document.getElementById('convertToValues').disabled = false;
           })
           .processBatchOperation(operation);
+      }
+      
+      // Convert selected Exa functions to static values (freeze)
+      function convertSelectedToValues() {
+        const batchStatusDiv = document.getElementById('batchStatus');
+        
+        // Disable buttons during operation
+        document.getElementById('refreshSelected').disabled = true;
+        document.getElementById('convertToValues').disabled = true;
+        
+        // Update status
+        batchStatusDiv.textContent = 'Converting to values...';
+        
+        google.script.run
+          .withSuccessHandler(result => {
+            if (result.success) {
+              batchStatusDiv.textContent = `${result.message}`;
+            } else {
+              batchStatusDiv.textContent = `${result.message}`;
+            }
+            
+            // Re-enable buttons
+            document.getElementById('refreshSelected').disabled = false;
+            document.getElementById('convertToValues').disabled = false;
+          })
+          .withFailureHandler(error => {
+            batchStatusDiv.textContent = `Error: ${error.message || error}`;
+            
+            // Re-enable buttons
+            document.getElementById('refreshSelected').disabled = false;
+            document.getElementById('convertToValues').disabled = false;
+          })
+          .convertToValues();
       }
 
     </script>
