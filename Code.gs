@@ -508,35 +508,38 @@ function EXA_ANSWER(prompt, prefix, suffix, includeCitations, systemPrompt, outp
       
       if (useChatCompletions) {
         // Chat completions response format (for systemPrompt OR outputSchema)
-        if (result.choices && result.choices[0] && result.choices[0].message) {
+        // Note: When output_schema is used, response has answer at top level (like /answer endpoint)
+        // When only systemPrompt is used, response has choices[0].message.content format
+        
+        if (parsedSchema && result.answer !== undefined) {
+          // With outputSchema: response has answer as object at top level
+          citations = result.citations || [];
+          const answerObj = result.answer;
+          
+          if (typeof answerObj === 'object' && answerObj !== null) {
+            if (returnRawJson === true) {
+              fullAnswerFromApi = JSON.stringify(answerObj, null, 2);
+            } else {
+              // Extract value: if single key, return just the value; otherwise return formatted JSON
+              const keys = Object.keys(answerObj);
+              if (keys.length === 1) {
+                fullAnswerFromApi = String(answerObj[keys[0]]);
+              } else {
+                fullAnswerFromApi = JSON.stringify(answerObj, null, 2);
+              }
+            }
+          } else if (typeof answerObj === 'string') {
+            fullAnswerFromApi = answerObj;
+          } else {
+            return "API returned a valid response, but answer format was unexpected.";
+          }
+        } else if (result.choices && result.choices[0] && result.choices[0].message) {
+          // Without outputSchema (systemPrompt only): standard chat completions format
           const messageContent = result.choices[0].message.content;
           citations = result.choices[0].message.citations || [];
-          
-          if (parsedSchema) {
-            // With outputSchema: content should be JSON, parse and extract
-            try {
-              const parsedContent = typeof messageContent === 'string' ? JSON.parse(messageContent) : messageContent;
-              if (returnRawJson === true) {
-                fullAnswerFromApi = JSON.stringify(parsedContent, null, 2);
-              } else {
-                // Extract value: if single key, return just the value; otherwise return formatted JSON
-                const keys = Object.keys(parsedContent);
-                if (keys.length === 1) {
-                  fullAnswerFromApi = String(parsedContent[keys[0]]);
-                } else {
-                  fullAnswerFromApi = JSON.stringify(parsedContent, null, 2);
-                }
-              }
-            } catch (e) {
-              // If parsing fails, return as-is (might already be the value)
-              fullAnswerFromApi = String(messageContent);
-            }
-          } else {
-            // Without outputSchema: just use the content as-is
-            fullAnswerFromApi = messageContent;
-          }
+          fullAnswerFromApi = messageContent;
         } else {
-          return "API returned a valid response, but no message content was found.";
+          return "API returned a valid response, but no answer or message content was found.";
         }
       } else {
         // /answer endpoint response format (no systemPrompt, no outputSchema)
