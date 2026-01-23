@@ -475,7 +475,7 @@ function EXA_ANSWER(prompt, prefix, suffix, includeCitations, systemPrompt, outp
       
       const chatPayload = { model: "exa", messages: messages };
       if (parsedSchema) {
-        chatPayload.outputSchema = parsedSchema;
+        chatPayload.extraBody = { outputSchema: parsedSchema };
       }
       
       response = fetchWithRetry("https://api.exa.ai/chat/completions", {
@@ -507,39 +507,43 @@ function EXA_ANSWER(prompt, prefix, suffix, includeCitations, systemPrompt, outp
       let citations = [];
       
       if (useChatCompletions) {
-        // Chat completions response format (for systemPrompt OR outputSchema)
-        // Note: When output_schema is used, response has answer at top level (like /answer endpoint)
-        // When only systemPrompt is used, response has choices[0].message.content format
+        // Chat completions response format (for systemPrompt and/or outputSchema)
+        // Response is always in choices[0].message.content format
         
-        if (parsedSchema && result.answer !== undefined) {
-          // With outputSchema: response has answer as object at top level
-          citations = result.citations || [];
-          const answerObj = result.answer;
-          
-          if (typeof answerObj === 'object' && answerObj !== null) {
-            if (returnRawJson === true) {
-              fullAnswerFromApi = JSON.stringify(answerObj, null, 2);
-            } else {
-              // Extract value: if single key, return just the value; otherwise return formatted JSON
-              const keys = Object.keys(answerObj);
-              if (keys.length === 1) {
-                fullAnswerFromApi = String(answerObj[keys[0]]);
-              } else {
-                fullAnswerFromApi = JSON.stringify(answerObj, null, 2);
-              }
-            }
-          } else if (typeof answerObj === 'string') {
-            fullAnswerFromApi = answerObj;
-          } else {
-            return "API returned a valid response, but answer format was unexpected.";
-          }
-        } else if (result.choices && result.choices[0] && result.choices[0].message) {
-          // Without outputSchema (systemPrompt only): standard chat completions format
+        if (result.choices && result.choices[0] && result.choices[0].message) {
           const messageContent = result.choices[0].message.content;
           citations = result.choices[0].message.citations || [];
-          fullAnswerFromApi = messageContent;
+          
+          if (parsedSchema) {
+            // With outputSchema: content is a JSON string that needs to be parsed
+            try {
+              const answerObj = JSON.parse(messageContent);
+              
+              if (typeof answerObj === 'object' && answerObj !== null) {
+                if (returnRawJson === true) {
+                  fullAnswerFromApi = JSON.stringify(answerObj, null, 2);
+                } else {
+                  // Extract value: if single key, return just the value; otherwise return formatted JSON
+                  const keys = Object.keys(answerObj);
+                  if (keys.length === 1) {
+                    fullAnswerFromApi = String(answerObj[keys[0]]);
+                  } else {
+                    fullAnswerFromApi = JSON.stringify(answerObj, null, 2);
+                  }
+                }
+              } else {
+                fullAnswerFromApi = messageContent;
+              }
+            } catch (parseError) {
+              // If JSON parsing fails, return the content as-is
+              fullAnswerFromApi = messageContent;
+            }
+          } else {
+            // Without outputSchema (systemPrompt only): use content directly
+            fullAnswerFromApi = messageContent;
+          }
         } else {
-          return "API returned a valid response, but no answer or message content was found.";
+          return "API returned a valid response, but no message content was found.";
         }
       } else {
         // /answer endpoint response format (no systemPrompt, no outputSchema)
