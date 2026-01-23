@@ -475,7 +475,7 @@ function EXA_ANSWER(prompt, prefix, suffix, includeCitations, systemPrompt, outp
       
       const chatPayload = { model: "exa", messages: messages };
       if (parsedSchema) {
-        chatPayload.output_schema = parsedSchema;
+        chatPayload.outputSchema = parsedSchema;
       }
       
       response = fetchWithRetry("https://api.exa.ai/chat/completions", {

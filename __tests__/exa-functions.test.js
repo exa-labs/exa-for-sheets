@@ -286,7 +286,7 @@ describe('EXA_ANSWER', () => {
     
     const callArgs = UrlFetchApp.fetch.mock.calls[0][1];
     const payload = JSON.parse(callArgs.payload);
-    expect(payload.output_schema).toEqual(JSON.parse(schema));
+    expect(payload.outputSchema).toEqual(JSON.parse(schema));
     expect(payload.model).toBe('exa');
     
     // Should extract the value from single-key object
