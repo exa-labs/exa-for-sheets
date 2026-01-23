@@ -704,10 +704,11 @@ function EXA_FINDSIMILAR(url, numResults, includeDomainsStr, excludeDomainsStr, 
  * @param {string} [suffix=""] Optional. Text to add after the main query.
  * @param {string} [includeDomainsStr=""] Optional. Comma-separated list of domains to restrict results to (e.g., "linkedin.com,crunchbase.com").
  * @param {string} [excludeDomainsStr=""] Optional. Comma-separated list of domains to exclude from results (e.g., "wikipedia.org,reddit.com").
+ * @param {string} [category=""] Optional. Filter by content category: "company", "research paper", "news", "github", "tweet", "personal site", "pdf", "financial report", "people".
  * @return {string[]} An array of result URLs or a single cell error message.
  * @customfunction
  */
-function EXA_SEARCH(query, numResults, searchType, prefix, suffix, includeDomainsStr, excludeDomainsStr) {
+function EXA_SEARCH(query, numResults, searchType, prefix, suffix, includeDomainsStr, excludeDomainsStr, category) {
   const apiKey = getApiKey();
   if (!apiKey) return [["No API key set. Please set your API key in the Exa AI sidebar."]];
 
@@ -732,6 +733,12 @@ function EXA_SEARCH(query, numResults, searchType, prefix, suffix, includeDomain
   const includeDomains = processDomains(includeDomainsStr);
   const excludeDomains = processDomains(excludeDomainsStr);
 
+  // Validate category if provided
+  const validCategories = ['company', 'research paper', 'news', 'github', 'tweet', 'personal site', 'pdf', 'financial report', 'people'];
+  const categoryValue = (typeof category === 'string' && category.trim() !== '' && validCategories.includes(category.toLowerCase())) 
+    ? category.toLowerCase() 
+    : null;
+
   // Build payload
   const payload = {
     query: finalQuery,
@@ -745,6 +752,9 @@ function EXA_SEARCH(query, numResults, searchType, prefix, suffix, includeDomain
   }
   if (excludeDomains && excludeDomains.length > 0) {
     payload.excludeDomains = excludeDomains;
+  }
+  if (categoryValue) {
+    payload.category = categoryValue;
   }
 
   try {

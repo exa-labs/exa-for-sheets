@@ -27,6 +27,15 @@ Added `includeDomainsStr` and `excludeDomainsStr` parameters to EXA_SEARCH, allo
 =EXA_SEARCH("machine learning", 5, "auto", "", "", "", "wikipedia.org")
 ```
 
+**Category Filtering for EXA_SEARCH**
+Added `category` parameter to filter results by content type. Available categories: "company", "research paper", "news", "github", "tweet", "personal site", "pdf", "financial report", "people".
+
+```
+=EXA_SEARCH("OpenAI", 5, "auto", "", "", "", "", "company")
+=EXA_SEARCH("transformer architecture", 5, "auto", "", "", "", "", "research paper")
+=EXA_SEARCH("GPT-5 release", 5, "auto", "", "", "", "", "news")
+```
+
 **Rate Limiting with Automatic Retry**
 API calls now automatically retry with exponential backoff when rate limited (HTTP 429). The add-on will retry up to 3 times with increasing delays, respecting the Retry-After header when provided.
 
