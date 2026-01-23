@@ -266,15 +266,12 @@ describe('EXA_ANSWER', () => {
   });
 
   test('should use chat completions endpoint with output_schema when outputSchema is provided', () => {
+    // When output_schema is used, response has answer as object at top level (like /answer endpoint)
     UrlFetchApp.fetch.mockReturnValue({
       getResponseCode: () => 200,
       getContentText: () => JSON.stringify({
-        choices: [{
-          message: {
-            content: JSON.stringify({ name: 'Will Bryk' }),
-            citations: []
-          }
-        }]
+        answer: { name: 'Will Bryk' },
+        citations: []
       })
     });
 
@@ -289,7 +286,7 @@ describe('EXA_ANSWER', () => {
     
     const callArgs = UrlFetchApp.fetch.mock.calls[0][1];
     const payload = JSON.parse(callArgs.payload);
-    expect(payload.output_schema).toEqual(JSON.parse(schema));
+    expect(payload.outputSchema).toEqual(JSON.parse(schema));
     expect(payload.model).toBe('exa');
     
     // Should extract the value from single-key object
@@ -297,15 +294,12 @@ describe('EXA_ANSWER', () => {
   });
 
   test('should return raw JSON when returnRawJson is true', () => {
+    // When output_schema is used, response has answer as object at top level
     UrlFetchApp.fetch.mockReturnValue({
       getResponseCode: () => 200,
       getContentText: () => JSON.stringify({
-        choices: [{
-          message: {
-            content: JSON.stringify({ name: 'Will Bryk' }),
-            citations: []
-          }
-        }]
+        answer: { name: 'Will Bryk' },
+        citations: []
       })
     });
 
@@ -319,15 +313,12 @@ describe('EXA_ANSWER', () => {
   });
 
   test('should return formatted JSON for multi-key response', () => {
+    // When output_schema is used, response has answer as object at top level
     UrlFetchApp.fetch.mockReturnValue({
       getResponseCode: () => 200,
       getContentText: () => JSON.stringify({
-        choices: [{
-          message: {
-            content: JSON.stringify({ name: 'Will Bryk', company: 'Exa' }),
-            citations: []
-          }
-        }]
+        answer: { name: 'Will Bryk', company: 'Exa' },
+        citations: []
       })
     });
 
