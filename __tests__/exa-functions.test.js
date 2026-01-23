@@ -331,6 +331,73 @@ describe('EXA_ANSWER', () => {
     expect(result).toContain('"company"');
   });
 
+  test('should return JSON with all schema-defined properties for complex multi-property schema', () => {
+    const complexAnswer = {
+      id: 'exa-001',
+      name: 'Exa AI',
+      description: 'Neural search engine company',
+      status: 'active',
+      createdDate: '2022-01-15',
+      lastModified: '2024-03-20',
+      category: 'AI/ML',
+      priority: 'high',
+      tags: ['search', 'ai', 'neural'],
+      metadata: {
+        version: '2.0',
+        author: 'Will Bryk'
+      }
+    };
+
+    UrlFetchApp.fetch.mockReturnValue({
+      getResponseCode: () => 200,
+      getContentText: () => JSON.stringify({
+        answer: complexAnswer,
+        citations: []
+      })
+    });
+
+    const schema = JSON.stringify({
+      type: 'object',
+      required: ['id', 'name', 'description', 'status', 'createdDate', 'lastModified', 'category', 'priority', 'tags', 'metadata'],
+      additionalProperties: false,
+      properties: {
+        id: { type: 'string', description: 'Unique identifier' },
+        name: { type: 'string', description: 'Display name or title' },
+        description: { type: 'string', description: 'Detailed description' },
+        status: { type: 'string', description: 'Current status' },
+        createdDate: { type: 'string', description: 'Date when created' },
+        lastModified: { type: 'string', description: 'Date when last modified' },
+        category: { type: 'string', description: 'Category classification' },
+        priority: { type: 'string', description: 'Priority level' },
+        tags: { type: 'array', description: 'List of tags', items: { type: 'string' } },
+        metadata: {
+          type: 'object',
+          description: 'Additional metadata',
+          properties: {
+            version: { type: 'string', description: 'Version number' },
+            author: { type: 'string', description: 'Author or creator' }
+          },
+          additionalProperties: false
+        }
+      }
+    });
+
+    const result = EXA_ANSWER('describe exa.ai company', '', '', false, '', schema, true);
+    const parsed = JSON.parse(result);
+
+    expect(parsed.id).toBe('exa-001');
+    expect(parsed.name).toBe('Exa AI');
+    expect(parsed.description).toBe('Neural search engine company');
+    expect(parsed.status).toBe('active');
+    expect(parsed.createdDate).toBe('2022-01-15');
+    expect(parsed.lastModified).toBe('2024-03-20');
+    expect(parsed.category).toBe('AI/ML');
+    expect(parsed.priority).toBe('high');
+    expect(parsed.tags).toEqual(['search', 'ai', 'neural']);
+    expect(parsed.metadata.version).toBe('2.0');
+    expect(parsed.metadata.author).toBe('Will Bryk');
+  });
+
   test('should return error for invalid outputSchema JSON', () => {
     const result = EXA_ANSWER('test', '', '', false, '', 'invalid json');
     
