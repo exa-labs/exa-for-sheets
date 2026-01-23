@@ -464,32 +464,31 @@ function EXA_ANSWER(prompt, prefix, suffix, includeCitations, systemPrompt, outp
   try {
     let response;
     
-    if (hasSystemPrompt || parsedSchema) {
-      // Use chat completions endpoint when system prompt or output schema is provided
-      const messages = [];
-      if (hasSystemPrompt) {
-        messages.push({ role: "system", content: systemPrompt.trim() });
-      }
-      messages.push({ role: "user", content: finalPrompt });
-      
-      const payload = { model: "exa", messages: messages };
-      if (parsedSchema) {
-        payload.output_schema = parsedSchema;
-      }
+    if (hasSystemPrompt && !parsedSchema) {
+      // Use chat completions endpoint ONLY for system prompt without output schema
+      const messages = [
+        { role: "system", content: systemPrompt.trim() },
+        { role: "user", content: finalPrompt }
+      ];
       
       response = fetchWithRetry("https://api.exa.ai/chat/completions", {
         method: "post",
         contentType: "application/json",
-        payload: JSON.stringify(payload),
+        payload: JSON.stringify({ model: "exa", messages: messages }),
         headers: { "Authorization": `Bearer ${apiKey}`, "x-exa-integration": "exa-for-sheets", "User-Agent": "exa-for-sheets 1.1" },
         muteHttpExceptions: true
       });
     } else {
-      // Use standard /answer endpoint
+      // Use /answer endpoint (with optional output_schema)
+      const answerPayload = { query: finalPrompt };
+      if (parsedSchema) {
+        answerPayload.output_schema = parsedSchema;
+      }
+      
       response = fetchWithRetry("https://api.exa.ai/answer", {
         method: "post",
         contentType: "application/json",
-        payload: JSON.stringify({ query: finalPrompt }),
+        payload: JSON.stringify(answerPayload),
         headers: { "x-api-key": apiKey, "x-exa-integration": "exa-for-sheets", "User-Agent": "exa-for-sheets 1.1" },
         muteHttpExceptions: true
       });
@@ -504,47 +503,39 @@ function EXA_ANSWER(prompt, prefix, suffix, includeCitations, systemPrompt, outp
       
       let fullAnswerFromApi;
       let citations = [];
-      const usedChatCompletions = hasSystemPrompt || parsedSchema;
+      const usedChatCompletions = hasSystemPrompt && !parsedSchema;
       
       if (usedChatCompletions) {
-        // Chat completions response format
+        // Chat completions response format (only for systemPrompt without outputSchema)
         if (result.choices && result.choices[0] && result.choices[0].message) {
-          const messageContent = result.choices[0].message.content;
+          fullAnswerFromApi = result.choices[0].message.content;
           citations = result.choices[0].message.citations || [];
-          
-          // If outputSchema was provided, try to parse and extract the value
-          if (parsedSchema) {
-            try {
-              const jsonResponse = JSON.parse(messageContent);
-              // If returnRawJson is true, return the formatted JSON
-              if (returnRawJson === true) {
-                fullAnswerFromApi = JSON.stringify(jsonResponse, null, 2);
-              } else {
-                // Extract value: if single key, return just the value; otherwise return formatted JSON
-                const keys = Object.keys(jsonResponse);
-                if (keys.length === 1) {
-                  fullAnswerFromApi = String(jsonResponse[keys[0]]);
-                } else {
-                  fullAnswerFromApi = JSON.stringify(jsonResponse, null, 2);
-                }
-              }
-            } catch (e) {
-              // If JSON parsing fails, return the raw content
-              fullAnswerFromApi = messageContent;
-            }
-          } else {
-            fullAnswerFromApi = messageContent;
-          }
         } else {
           return "API returned a valid response, but no message content was found.";
         }
-      }else {
-        // Standard /answer response format
-        if (result && typeof result.answer === 'string') {
+      } else {
+        // /answer endpoint response format
+        citations = result.citations || [];
+        
+        if (parsedSchema && result.answer && typeof result.answer === 'object') {
+          // Structured output: answer is an object with schema fields
+          const answerObj = result.answer;
+          if (returnRawJson === true) {
+            fullAnswerFromApi = JSON.stringify(answerObj, null, 2);
+          } else {
+            // Extract value: if single key, return just the value; otherwise return formatted JSON
+            const keys = Object.keys(answerObj);
+            if (keys.length === 1) {
+              fullAnswerFromApi = String(answerObj[keys[0]]);
+            } else {
+              fullAnswerFromApi = JSON.stringify(answerObj, null, 2);
+            }
+          }
+        } else if (result && typeof result.answer === 'string') {
+          // Standard text answer
           fullAnswerFromApi = result.answer;
-          citations = result.citations || [];
         } else {
-          return "API returned a valid response, but no 'answer' field (string) was found.";
+          return "API returned a valid response, but no 'answer' field was found.";
         }
       }
 

@@ -265,11 +265,12 @@ describe('EXA_ANSWER', () => {
     expect(result).toBe('Will Bryk');
   });
 
-  test('should use chat completions endpoint when outputSchema is provided', () => {
+  test('should use /answer endpoint with output_schema when outputSchema is provided', () => {
     UrlFetchApp.fetch.mockReturnValue({
       getResponseCode: () => 200,
       getContentText: () => JSON.stringify({
-        choices: [{ message: { content: '{"name": "Will Bryk"}', citations: [] } }]
+        answer: { name: 'Will Bryk' },
+        citations: []
       })
     });
 
@@ -278,7 +279,7 @@ describe('EXA_ANSWER', () => {
     const result = EXA_ANSWER('ceo of exa.ai', '', '', false, '', schema);
     
     expect(UrlFetchApp.fetch).toHaveBeenCalledWith(
-      'https://api.exa.ai/chat/completions',
+      'https://api.exa.ai/answer',
       expect.anything()
     );
     
@@ -286,7 +287,7 @@ describe('EXA_ANSWER', () => {
     const payload = JSON.parse(callArgs.payload);
     expect(payload.output_schema).toEqual(JSON.parse(schema));
     
-    // Should extract the value from single-key JSON
+    // Should extract the value from single-key object
     expect(result).toBe('Will Bryk');
   });
 
@@ -294,7 +295,8 @@ describe('EXA_ANSWER', () => {
     UrlFetchApp.fetch.mockReturnValue({
       getResponseCode: () => 200,
       getContentText: () => JSON.stringify({
-        choices: [{ message: { content: '{"name": "Will Bryk"}', citations: [] } }]
+        answer: { name: 'Will Bryk' },
+        citations: []
       })
     });
 
@@ -311,7 +313,8 @@ describe('EXA_ANSWER', () => {
     UrlFetchApp.fetch.mockReturnValue({
       getResponseCode: () => 200,
       getContentText: () => JSON.stringify({
-        choices: [{ message: { content: '{"name": "Will Bryk", "company": "Exa"}', citations: [] } }]
+        answer: { name: 'Will Bryk', company: 'Exa' },
+        citations: []
       })
     });
 
