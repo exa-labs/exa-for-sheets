@@ -463,11 +463,11 @@ function EXA_ANSWER(prompt, prefix, suffix, includeCitations, systemPrompt, outp
     }
   }
 
-  // Validate search type if provided
+  // Validate search type — defaults to 'deep' for richer results
   const validTypes = ['auto', 'neural', 'fast', 'deep'];
   const searchType = (typeof type === 'string' && validTypes.includes(type.toLowerCase()))
     ? type.toLowerCase()
-    : null;
+    : 'deep';
 
   // --- API Call ---
   try {
