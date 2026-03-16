@@ -266,17 +266,16 @@ describe('EXA_ANSWER', () => {
   });
 
   test('should use chat completions endpoint with output_schema when outputSchema is provided', () => {
-    // When output_schema is used, response has answer as object at top level (like /answer endpoint)
+    // Chat completions response format with JSON string in content
     UrlFetchApp.fetch.mockReturnValue({
       getResponseCode: () => 200,
       getContentText: () => JSON.stringify({
-        answer: { name: 'Will Bryk' },
-        citations: []
+        choices: [{ message: { content: JSON.stringify({ name: 'Will Bryk' }), citations: [] } }]
       })
     });
 
     const schema = '{"type":"object","properties":{"name":{"type":"string"}}}';
-    // EXA_ANSWER(prompt, prefix, suffix, includeCitations, systemPrompt, outputSchema, returnRawJson)
+    // EXA_ANSWER(prompt, prefix, suffix, includeCitations, systemPrompt, outputSchema, returnRawJson, type)
     const result = EXA_ANSWER('ceo of exa.ai', '', '', false, '', schema);
     
     expect(UrlFetchApp.fetch).toHaveBeenCalledWith(
@@ -286,7 +285,7 @@ describe('EXA_ANSWER', () => {
     
     const callArgs = UrlFetchApp.fetch.mock.calls[0][1];
     const payload = JSON.parse(callArgs.payload);
-    expect(payload.outputSchema).toEqual(JSON.parse(schema));
+    expect(payload.extraBody.outputSchema).toEqual(JSON.parse(schema));
     expect(payload.model).toBe('exa');
     
     // Should extract the value from single-key object
@@ -294,17 +293,16 @@ describe('EXA_ANSWER', () => {
   });
 
   test('should return raw JSON when returnRawJson is true', () => {
-    // When output_schema is used, response has answer as object at top level
+    // Chat completions response format with JSON string in content
     UrlFetchApp.fetch.mockReturnValue({
       getResponseCode: () => 200,
       getContentText: () => JSON.stringify({
-        answer: { name: 'Will Bryk' },
-        citations: []
+        choices: [{ message: { content: JSON.stringify({ name: 'Will Bryk' }), citations: [] } }]
       })
     });
 
     const schema = '{"type":"object","properties":{"name":{"type":"string"}}}';
-    // EXA_ANSWER(prompt, prefix, suffix, includeCitations, systemPrompt, outputSchema, returnRawJson)
+    // EXA_ANSWER(prompt, prefix, suffix, includeCitations, systemPrompt, outputSchema, returnRawJson, type)
     const result = EXA_ANSWER('ceo of exa.ai', '', '', false, '', schema, true);
     
     // Should return formatted JSON when returnRawJson is true
@@ -313,17 +311,16 @@ describe('EXA_ANSWER', () => {
   });
 
   test('should return formatted JSON for multi-key response', () => {
-    // When output_schema is used, response has answer as object at top level
+    // Chat completions response format with JSON string in content
     UrlFetchApp.fetch.mockReturnValue({
       getResponseCode: () => 200,
       getContentText: () => JSON.stringify({
-        answer: { name: 'Will Bryk', company: 'Exa' },
-        citations: []
+        choices: [{ message: { content: JSON.stringify({ name: 'Will Bryk', company: 'Exa' }), citations: [] } }]
       })
     });
 
     const schema = '{"type":"object","properties":{"name":{"type":"string"},"company":{"type":"string"}}}';
-    // EXA_ANSWER(prompt, prefix, suffix, includeCitations, systemPrompt, outputSchema, returnRawJson)
+    // EXA_ANSWER(prompt, prefix, suffix, includeCitations, systemPrompt, outputSchema, returnRawJson, type)
     const result = EXA_ANSWER('ceo of exa.ai', '', '', false, '', schema);
     
     // Should return formatted JSON for multi-key response
@@ -348,11 +345,11 @@ describe('EXA_ANSWER', () => {
       }
     };
 
+    // Chat completions response format with JSON string in content
     UrlFetchApp.fetch.mockReturnValue({
       getResponseCode: () => 200,
       getContentText: () => JSON.stringify({
-        answer: complexAnswer,
-        citations: []
+        choices: [{ message: { content: JSON.stringify(complexAnswer), citations: [] } }]
       })
     });
 
@@ -402,6 +399,174 @@ describe('EXA_ANSWER', () => {
     const result = EXA_ANSWER('test', '', '', false, '', 'invalid json');
     
     expect(result).toContain('Invalid outputSchema');
+  });
+
+  test('should pass type parameter to /answer endpoint', () => {
+    UrlFetchApp.fetch.mockReturnValue({
+      getResponseCode: () => 200,
+      getContentText: () => JSON.stringify({
+        answer: 'Deep answer result'
+      })
+    });
+
+    // EXA_ANSWER(prompt, prefix, suffix, includeCitations, systemPrompt, outputSchema, returnRawJson, type)
+    EXA_ANSWER('What is Exa?', '', '', false, '', '', false, 'deep');
+
+    const callArgs = UrlFetchApp.fetch.mock.calls[0][1];
+    const payload = JSON.parse(callArgs.payload);
+    
+    expect(payload.type).toBe('deep');
+    expect(payload.query).toBe('What is Exa?');
+  });
+
+  test('should not include type in payload when type is not provided', () => {
+    UrlFetchApp.fetch.mockReturnValue({
+      getResponseCode: () => 200,
+      getContentText: () => JSON.stringify({
+        answer: 'Default answer'
+      })
+    });
+
+    EXA_ANSWER('test query');
+
+    const callArgs = UrlFetchApp.fetch.mock.calls[0][1];
+    const payload = JSON.parse(callArgs.payload);
+    
+    expect(payload.type).toBeUndefined();
+  });
+
+  test('should ignore invalid type parameter', () => {
+    UrlFetchApp.fetch.mockReturnValue({
+      getResponseCode: () => 200,
+      getContentText: () => JSON.stringify({
+        answer: 'Answer'
+      })
+    });
+
+    EXA_ANSWER('test', '', '', false, '', '', false, 'invalid_type');
+
+    const callArgs = UrlFetchApp.fetch.mock.calls[0][1];
+    const payload = JSON.parse(callArgs.payload);
+    
+    expect(payload.type).toBeUndefined();
+  });
+
+  test('should pass type via extraBody when using chat completions', () => {
+    UrlFetchApp.fetch.mockReturnValue({
+      getResponseCode: () => 200,
+      getContentText: () => JSON.stringify({
+        choices: [{ message: { content: 'Deep result', citations: [] } }]
+      })
+    });
+
+    EXA_ANSWER('test query', '', '', false, 'be concise', '', false, 'deep');
+
+    const callArgs = UrlFetchApp.fetch.mock.calls[0][1];
+    const payload = JSON.parse(callArgs.payload);
+    
+    expect(payload.extraBody.type).toBe('deep');
+  });
+
+  test('should accept all valid type values', () => {
+    const validTypes = ['auto', 'neural', 'fast', 'deep'];
+    
+    for (const type of validTypes) {
+      resetMocks();
+      saveApiKey('exa_test_api_key');
+      
+      UrlFetchApp.fetch.mockReturnValue({
+        getResponseCode: () => 200,
+        getContentText: () => JSON.stringify({ answer: `Answer for ${type}` })
+      });
+
+      EXA_ANSWER('test', '', '', false, '', '', false, type);
+
+      const callArgs = UrlFetchApp.fetch.mock.calls[0][1];
+      const payload = JSON.parse(callArgs.payload);
+      expect(payload.type).toBe(type);
+    }
+  });
+});
+
+describe('EXA (simplified wrapper)', () => {
+  beforeEach(() => {
+    resetMocks();
+    saveApiKey('exa_test_api_key');
+  });
+
+  test('should return error when no API key is set', () => {
+    removeApiKey();
+    const result = EXA('What is the CEO name?', 'Exa AI');
+    
+    expect(result).toContain('No API key set');
+  });
+
+  test('should use deep search type by default', () => {
+    UrlFetchApp.fetch.mockReturnValue({
+      getResponseCode: () => 200,
+      getContentText: () => JSON.stringify({
+        answer: 'Will Bryk'
+      })
+    });
+
+    EXA('Return only the CEO name', 'Exa AI');
+
+    expect(UrlFetchApp.fetch).toHaveBeenCalledWith(
+      'https://api.exa.ai/answer',
+      expect.objectContaining({ method: 'post' })
+    );
+
+    const callArgs = UrlFetchApp.fetch.mock.calls[0][1];
+    const payload = JSON.parse(callArgs.payload);
+    
+    expect(payload.type).toBe('deep');
+    expect(payload.query).toBe('Return only the CEO name: Exa AI');
+  });
+
+  test('should combine prompt and context', () => {
+    UrlFetchApp.fetch.mockReturnValue({
+      getResponseCode: () => 200,
+      getContentText: () => JSON.stringify({
+        answer: 'https://exa.ai'
+      })
+    });
+
+    EXA('Return only the company website URL', 'Exa AI');
+
+    const callArgs = UrlFetchApp.fetch.mock.calls[0][1];
+    const payload = JSON.parse(callArgs.payload);
+    
+    expect(payload.query).toBe('Return only the company website URL: Exa AI');
+  });
+
+  test('should work without context', () => {
+    UrlFetchApp.fetch.mockReturnValue({
+      getResponseCode: () => 200,
+      getContentText: () => JSON.stringify({
+        answer: 'Paris'
+      })
+    });
+
+    EXA('What is the capital of France?');
+
+    const callArgs = UrlFetchApp.fetch.mock.calls[0][1];
+    const payload = JSON.parse(callArgs.payload);
+    
+    expect(payload.query).toBe('What is the capital of France?');
+    expect(payload.type).toBe('deep');
+  });
+
+  test('should return the answer text', () => {
+    UrlFetchApp.fetch.mockReturnValue({
+      getResponseCode: () => 200,
+      getContentText: () => JSON.stringify({
+        answer: '150 employees'
+      })
+    });
+
+    const result = EXA('Return only the company headcount', 'Exa AI');
+    
+    expect(result).toBe('150 employees');
   });
 });
 
