@@ -419,7 +419,7 @@ describe('EXA_ANSWER', () => {
     expect(payload.query).toBe('What is Exa?');
   });
 
-  test('should not include type in payload when type is not provided', () => {
+  test('should default to deep type when type is not provided', () => {
     UrlFetchApp.fetch.mockReturnValue({
       getResponseCode: () => 200,
       getContentText: () => JSON.stringify({
@@ -432,10 +432,10 @@ describe('EXA_ANSWER', () => {
     const callArgs = UrlFetchApp.fetch.mock.calls[0][1];
     const payload = JSON.parse(callArgs.payload);
     
-    expect(payload.type).toBeUndefined();
+    expect(payload.type).toBe('deep');
   });
 
-  test('should ignore invalid type parameter', () => {
+  test('should fall back to deep for invalid type parameter', () => {
     UrlFetchApp.fetch.mockReturnValue({
       getResponseCode: () => 200,
       getContentText: () => JSON.stringify({
@@ -448,7 +448,7 @@ describe('EXA_ANSWER', () => {
     const callArgs = UrlFetchApp.fetch.mock.calls[0][1];
     const payload = JSON.parse(callArgs.payload);
     
-    expect(payload.type).toBeUndefined();
+    expect(payload.type).toBe('deep');
   });
 
   test('should pass type via extraBody when using chat completions', () => {
