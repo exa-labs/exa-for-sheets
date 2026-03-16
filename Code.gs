@@ -400,6 +400,7 @@ function ensureAuthorized() {
 /**
  * Simple AI-powered data enrichment using Exa. This is the recommended function for most use cases.
  * Just describe what information you want about the data in the referenced cell.
+ * Uses deep search by default for richer, more thorough results.
  * 
  * Examples:
  *   =EXA("Return only the company website URL", A1)
@@ -417,7 +418,8 @@ function ensureAuthorized() {
 function EXA(prompt, context) {
   // Build the full prompt by combining the instruction with the context
   const fullPrompt = context ? `${prompt}: ${context}` : prompt;
-  return EXA_ANSWER(fullPrompt);
+  // Use deep search type for richer results
+  return EXA_ANSWER(fullPrompt, '', '', false, '', '', false, 'deep');
 }
 
 /**
@@ -434,10 +436,11 @@ function EXA(prompt, context) {
  * @param {string} [systemPrompt=""] Optional. System instructions to control output format (e.g., "only return a number"). Uses chat completions endpoint.
  * @param {string} [outputSchema=""] Optional. JSON schema for structured output (e.g., '{"type":"object","properties":{"value":{"type":"number"}},"required":["value"]}').
  * @param {boolean} [returnRawJson=FALSE] Optional. If TRUE and outputSchema is provided, returns raw JSON instead of extracted value.
+ * @param {string} [type=""] Optional. Search type: 'auto' (default), 'neural', 'fast', or 'deep'. Deep search provides more thorough results.
  * @return {string} The answer, or structured JSON if outputSchema is provided.
  * @customfunction
  */
-function EXA_ANSWER(prompt, prefix, suffix, includeCitations, systemPrompt, outputSchema, returnRawJson) {
+function EXA_ANSWER(prompt, prefix, suffix, includeCitations, systemPrompt, outputSchema, returnRawJson, type) {
   const apiKey = getApiKey();
   if (!apiKey) return "No API key set. Please set your API key in the Exa AI sidebar.";
 
@@ -460,6 +463,12 @@ function EXA_ANSWER(prompt, prefix, suffix, includeCitations, systemPrompt, outp
     }
   }
 
+  // Validate search type if provided
+  const validTypes = ['auto', 'neural', 'fast', 'deep'];
+  const searchType = (typeof type === 'string' && validTypes.includes(type.toLowerCase()))
+    ? type.toLowerCase()
+    : null;
+
   // --- API Call ---
   try {
     let response;
@@ -474,8 +483,15 @@ function EXA_ANSWER(prompt, prefix, suffix, includeCitations, systemPrompt, outp
       messages.push({ role: "user", content: finalPrompt });
       
       const chatPayload = { model: "exa", messages: messages };
+      const extraBody = {};
       if (parsedSchema) {
-        chatPayload.extraBody = { outputSchema: parsedSchema };
+        extraBody.outputSchema = parsedSchema;
+      }
+      if (searchType) {
+        extraBody.type = searchType;
+      }
+      if (Object.keys(extraBody).length > 0) {
+        chatPayload.extraBody = extraBody;
       }
       
       response = fetchWithRetry("https://api.exa.ai/chat/completions", {
@@ -487,10 +503,14 @@ function EXA_ANSWER(prompt, prefix, suffix, includeCitations, systemPrompt, outp
       });
     } else {
       // Use /answer endpoint (no systemPrompt, no outputSchema)
+      const answerPayload = { query: finalPrompt };
+      if (searchType) {
+        answerPayload.type = searchType;
+      }
       response = fetchWithRetry("https://api.exa.ai/answer", {
         method: "post",
         contentType: "application/json",
-        payload: JSON.stringify({ query: finalPrompt }),
+        payload: JSON.stringify(answerPayload),
         headers: { "x-api-key": apiKey, "x-exa-integration": "exa-for-sheets", "User-Agent": "exa-for-sheets 2.0" },
         muteHttpExceptions: true
       });
