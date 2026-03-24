@@ -105,7 +105,7 @@ Searches the web and returns a vertical list of URLs.
 * `suffix` (optional): Text to add after the main query
 * `includeDomainsStr` (optional): Comma-separated domains to include (e.g., "linkedin.com,crunchbase.com")
 * `excludeDomainsStr` (optional): Comma-separated domains to exclude
-* `category` (optional): Filter by type - "company", "research paper", "news", "github", "tweet", "pdf", etc.
+* `category` (optional): Filter by type - "company", "research paper", "news", "github", "pdf", etc.
 
 **Examples:**
 ```
