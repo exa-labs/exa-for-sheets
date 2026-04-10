@@ -501,38 +501,38 @@ describe('EXA (simplified wrapper)', () => {
     expect(result).toContain('No API key set');
   });
 
-  test('should use chat completions with system prompt and deep search type', () => {
+  test('should use /search with outputSchema and highlights', () => {
     UrlFetchApp.fetch.mockReturnValue({
       getResponseCode: () => 200,
       getContentText: () => JSON.stringify({
-        choices: [{ message: { content: 'Will Bryk', citations: [] } }]
+        output: { content: 'Will Bryk' },
+        results: []
       })
     });
 
     EXA('Return only the CEO name', 'Exa AI');
 
     expect(UrlFetchApp.fetch).toHaveBeenCalledWith(
-      'https://api.exa.ai/chat/completions',
+      'https://api.exa.ai/search',
       expect.objectContaining({ method: 'post' })
     );
 
     const callArgs = UrlFetchApp.fetch.mock.calls[0][1];
     const payload = JSON.parse(callArgs.payload);
     
-    expect(payload.extraBody.type).toBe('deep');
-    expect(payload.messages).toContainEqual(
-      expect.objectContaining({ role: 'user', content: 'Return only the CEO name: Exa AI' })
-    );
-    expect(payload.messages).toContainEqual(
-      expect.objectContaining({ role: 'system' })
-    );
+    expect(payload.query).toBe('Return only the CEO name: Exa AI');
+    expect(payload.type).toBe('auto');
+    expect(payload.numResults).toBe(10);
+    expect(payload.outputSchema).toEqual({ type: 'text', description: 'Return only the CEO name' });
+    expect(payload.contents).toEqual({ highlights: { maxCharacters: 4000 } });
   });
 
-  test('should combine prompt and context', () => {
+  test('should combine prompt and context in query', () => {
     UrlFetchApp.fetch.mockReturnValue({
       getResponseCode: () => 200,
       getContentText: () => JSON.stringify({
-        choices: [{ message: { content: 'https://exa.ai', citations: [] } }]
+        output: { content: 'https://exa.ai' },
+        results: []
       })
     });
 
@@ -541,16 +541,16 @@ describe('EXA (simplified wrapper)', () => {
     const callArgs = UrlFetchApp.fetch.mock.calls[0][1];
     const payload = JSON.parse(callArgs.payload);
     
-    expect(payload.messages).toContainEqual(
-      expect.objectContaining({ role: 'user', content: 'Return only the company website URL: Exa AI' })
-    );
+    expect(payload.query).toBe('Return only the company website URL: Exa AI');
+    expect(payload.outputSchema.description).toBe('Return only the company website URL');
   });
 
   test('should work without context', () => {
     UrlFetchApp.fetch.mockReturnValue({
       getResponseCode: () => 200,
       getContentText: () => JSON.stringify({
-        choices: [{ message: { content: 'Paris', citations: [] } }]
+        output: { content: 'Paris' },
+        results: []
       })
     });
 
@@ -559,17 +559,16 @@ describe('EXA (simplified wrapper)', () => {
     const callArgs = UrlFetchApp.fetch.mock.calls[0][1];
     const payload = JSON.parse(callArgs.payload);
     
-    expect(payload.messages).toContainEqual(
-      expect.objectContaining({ role: 'user', content: 'What is the capital of France?' })
-    );
-    expect(payload.extraBody.type).toBe('deep');
+    expect(payload.query).toBe('What is the capital of France?');
+    expect(payload.type).toBe('auto');
   });
 
-  test('should return the answer text', () => {
+  test('should return output.content from response', () => {
     UrlFetchApp.fetch.mockReturnValue({
       getResponseCode: () => 200,
       getContentText: () => JSON.stringify({
-        choices: [{ message: { content: '150 employees', citations: [] } }]
+        output: { content: '150 employees' },
+        results: []
       })
     });
 
@@ -578,11 +577,12 @@ describe('EXA (simplified wrapper)', () => {
     expect(result).toBe('150 employees');
   });
 
-  test('should follow formatting instructions via system prompt', () => {
+  test('should pass prompt as outputSchema description for formatting', () => {
     UrlFetchApp.fetch.mockReturnValue({
       getResponseCode: () => 200,
       getContentText: () => JSON.stringify({
-        choices: [{ message: { content: 'Sam Altman', citations: [] } }]
+        output: { content: 'Sam Altman' },
+        results: []
       })
     });
 
@@ -591,14 +591,12 @@ describe('EXA (simplified wrapper)', () => {
     const callArgs = UrlFetchApp.fetch.mock.calls[0][1];
     const payload = JSON.parse(callArgs.payload);
     
-    // Should route through chat completions so the model can follow instructions
     expect(UrlFetchApp.fetch).toHaveBeenCalledWith(
-      'https://api.exa.ai/chat/completions',
+      'https://api.exa.ai/search',
       expect.anything()
     );
-    // System prompt should be present to enforce instruction-following
-    expect(payload.messages[0].role).toBe('system');
-    expect(payload.messages[0].content).toContain('formatting instructions');
+    expect(payload.outputSchema.type).toBe('text');
+    expect(payload.outputSchema.description).toBe('who is the ceo of OpenAI, please ensure you only use the first and last name');
   });
 });
 
