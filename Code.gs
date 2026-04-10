@@ -423,7 +423,10 @@ function EXA(prompt, context) {
   // The /answer endpoint treats the input as a search query and ignores such instructions.
   const systemPrompt = 'You are a concise data enrichment assistant for Google Sheets. ' +
     'Follow the user\'s formatting instructions exactly. ' +
-    'Return only the requested information with no extra commentary, explanations, or caveats.';
+    'Return only the requested information with no extra commentary, explanations, or caveats. ' +
+    'If the user asks for just a name, return only the name. ' +
+    'If they ask for just a URL, return only the URL. ' +
+    'Never add preamble like "The answer is" or "The CEO is".';
   return EXA_ANSWER(fullPrompt, '', '', false, systemPrompt, '', false, 'deep');
 }
 
