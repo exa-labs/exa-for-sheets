@@ -400,7 +400,7 @@ function ensureAuthorized() {
 /**
  * Simple AI-powered data enrichment using Exa. This is the recommended function for most use cases.
  * Just describe what information you want about the data in the referenced cell.
- * Uses deep search by default for richer, more thorough results.
+ * Uses /search with outputSchema for structured text output.
  * 
  * Examples:
  *   =EXA("Return only the company website URL", A1)
@@ -416,18 +416,68 @@ function ensureAuthorized() {
  * @customfunction
  */
 function EXA(prompt, context) {
-  // Build the full prompt by combining the instruction with the context
-  const fullPrompt = context ? `${prompt}: ${context}` : prompt;
-  // Route through chat completions with a system prompt so the model
-  // follows the user's formatting instructions (e.g. "only return first and last name").
-  // The /answer endpoint treats the input as a search query and ignores such instructions.
-  const systemPrompt = 'You are a concise data enrichment assistant for Google Sheets. ' +
-    'Follow the user\'s formatting instructions exactly. ' +
-    'Return only the requested information with no extra commentary, explanations, or caveats. ' +
-    'If the user asks for just a name, return only the name. ' +
-    'If they ask for just a URL, return only the URL. ' +
-    'Never add preamble like "The answer is" or "The CEO is".';
-  return EXA_ANSWER(fullPrompt, '', '', false, systemPrompt, '', false, 'deep');
+  const apiKey = getApiKey();
+  if (!apiKey) return "No API key set. Please set your API key in the Exa AI sidebar.";
+
+  if (!prompt || typeof prompt !== 'string' || prompt.trim() === "") {
+    return "Please provide a valid prompt/question.";
+  }
+
+  const query = context ? `${prompt}: ${context}` : prompt;
+
+  const payload = {
+    query: query,
+    numResults: 10,
+    type: 'auto',
+    stream: false,
+    outputSchema: {
+      type: 'text',
+      description: prompt
+    },
+    contents: {
+      highlights: {
+        maxCharacters: 4000
+      }
+    }
+  };
+
+  try {
+    const response = fetchWithRetry("https://api.exa.ai/search", {
+      method: "post",
+      contentType: "application/json",
+      payload: JSON.stringify(payload),
+      headers: { "x-api-key": apiKey, "x-exa-integration": "exa-for-sheets", "User-Agent": "exa-for-sheets 2.0" },
+      muteHttpExceptions: true
+    });
+
+    const responseCode = response.getResponseCode();
+    const responseBody = response.getContentText();
+
+    if (responseCode === 200) {
+      const result = JSON.parse(responseBody);
+      if (result.output && result.output.content) {
+        return result.output.content;
+      } else if (result.results && result.results.length > 0) {
+        return result.results[0].url;
+      }
+      return "No results found.";
+    } else if (responseCode === 401) {
+      return "API Error: Invalid API Key. Please check your key in the Exa AI sidebar.";
+    } else if (responseCode === 429) {
+      return "API Error: Rate limit exceeded. Please wait a moment and try again.";
+    } else {
+      let errorMessage = `API Error: Status ${responseCode}.`;
+      try {
+        const errorResult = JSON.parse(responseBody);
+        errorMessage += ` Message: ${errorResult.error || responseBody}`;
+      } catch (e) {
+        errorMessage += ` Response: ${responseBody}`;
+      }
+      return errorMessage;
+    }
+  } catch (e) {
+    return `Script Error: ${e.message}`;
+  }
 }
 
 /**
@@ -817,10 +867,12 @@ function EXA_FINDSIMILAR(url, numResults, includeDomainsStr, excludeDomainsStr, 
  * @param {string} [includeDomainsStr=""] Optional. Comma-separated list of domains to restrict results to (e.g., "linkedin.com,crunchbase.com").
  * @param {string} [excludeDomainsStr=""] Optional. Comma-separated list of domains to exclude from results (e.g., "wikipedia.org,reddit.com").
  * @param {string} [category=""] Optional. Filter by content category: "company", "research paper", "news", "github", "personal site", "pdf", "financial report", "people".
- * @return {string[]} An array of result URLs or a single cell error message.
+ * @param {number} [highlightsMaxChars=0] Optional. If > 0, requests content highlights with this max character limit per result.
+ * @param {string} [outputSchemaJson=""] Optional. JSON string for outputSchema (e.g., '{"type":"text","description":"summarize"}') to get synthesized output.
+ * @return {string[]|string} An array of result URLs, synthesized output text, or a single cell error message.
  * @customfunction
  */
-function EXA_SEARCH(query, numResults, searchType, prefix, suffix, includeDomainsStr, excludeDomainsStr, category) {
+function EXA_SEARCH(query, numResults, searchType, prefix, suffix, includeDomainsStr, excludeDomainsStr, category, highlightsMaxChars, outputSchemaJson) {
   const apiKey = getApiKey();
   if (!apiKey) return [["No API key set. Please set your API key in the Exa AI sidebar."]];
 
@@ -831,8 +883,8 @@ function EXA_SEARCH(query, numResults, searchType, prefix, suffix, includeDomain
   // Process the query with optional prefix and suffix
   const finalQuery = `${prefix || ''} ${query} ${suffix || ''}`.trim();
 
-  const count = (typeof numResults === 'number' && numResults > 0 && numResults <= 10) ? Math.floor(numResults) : 1; // Default to 1, max 10 for free tier
-  const type = (searchType && ['auto', 'neural', 'keyword'].includes(searchType)) ? searchType : 'auto'; // Default to 'auto'
+  const count = (typeof numResults === 'number' && numResults > 0 && numResults <= 10) ? Math.floor(numResults) : 1;
+  const type = (searchType && ['auto', 'neural', 'keyword'].includes(searchType)) ? searchType : 'auto';
 
   // Process domain lists (comma-separated string to array)
   const processDomains = (domainStr) => {
@@ -856,6 +908,7 @@ function EXA_SEARCH(query, numResults, searchType, prefix, suffix, includeDomain
     query: finalQuery,
     numResults: count,
     type: type,
+    stream: false,
     useAutoprompt: (type !== 'keyword')
   };
 
@@ -869,12 +922,26 @@ function EXA_SEARCH(query, numResults, searchType, prefix, suffix, includeDomain
     payload.category = categoryValue;
   }
 
+  // Add contents.highlights if maxCharacters specified
+  if (typeof highlightsMaxChars === 'number' && highlightsMaxChars > 0) {
+    payload.contents = { highlights: { maxCharacters: highlightsMaxChars } };
+  }
+
+  // Parse outputSchema if provided as JSON string
+  if (typeof outputSchemaJson === 'string' && outputSchemaJson.trim() !== '') {
+    try {
+      payload.outputSchema = JSON.parse(outputSchemaJson);
+    } catch (e) {
+      return [["Invalid outputSchema: must be valid JSON."]];
+    }
+  }
+
   try {
     const response = fetchWithRetry("https://api.exa.ai/search", {
       method: "post",
       contentType: "application/json",
       payload: JSON.stringify(payload),
-      headers: { "x-api-key": apiKey, "x-exa-integration": "exa-for-sheets", "User-Agent": "exa-for-sheets 1.1" },
+      headers: { "x-api-key": apiKey, "x-exa-integration": "exa-for-sheets", "User-Agent": "exa-for-sheets 2.0" },
       muteHttpExceptions: true
     });
 
@@ -883,6 +950,12 @@ function EXA_SEARCH(query, numResults, searchType, prefix, suffix, includeDomain
 
     if (responseCode === 200) {
       const result = JSON.parse(responseBody);
+
+      // If outputSchema was used, return the synthesized output text
+      if (result.output && result.output.content) {
+        return [[result.output.content]];
+      }
+
       if (result && result.results && result.results.length > 0) {
         return result.results.map(item => [item.url]);
       } else {
