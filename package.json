@@ -1,6 +1,6 @@
 {
   "name": "exa-sheets",
-  "version": "2.0.3",
+  "version": "2.0.4",
   "description": "Exa API integration for Google Sheets",
   "main": "Code.gs",
   "scripts": {
