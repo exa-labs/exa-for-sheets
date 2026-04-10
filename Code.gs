@@ -418,8 +418,13 @@ function ensureAuthorized() {
 function EXA(prompt, context) {
   // Build the full prompt by combining the instruction with the context
   const fullPrompt = context ? `${prompt}: ${context}` : prompt;
-  // Use deep search type for richer results
-  return EXA_ANSWER(fullPrompt, '', '', false, '', '', false, 'deep');
+  // Route through chat completions with a system prompt so the model
+  // follows the user's formatting instructions (e.g. "only return first and last name").
+  // The /answer endpoint treats the input as a search query and ignores such instructions.
+  const systemPrompt = 'You are a concise data enrichment assistant for Google Sheets. ' +
+    'Follow the user\'s formatting instructions exactly. ' +
+    'Return only the requested information with no extra commentary, explanations, or caveats.';
+  return EXA_ANSWER(fullPrompt, '', '', false, systemPrompt, '', false, 'deep');
 }
 
 /**

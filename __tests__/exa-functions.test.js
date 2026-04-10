@@ -501,33 +501,38 @@ describe('EXA (simplified wrapper)', () => {
     expect(result).toContain('No API key set');
   });
 
-  test('should use deep search type by default', () => {
+  test('should use chat completions with system prompt and deep search type', () => {
     UrlFetchApp.fetch.mockReturnValue({
       getResponseCode: () => 200,
       getContentText: () => JSON.stringify({
-        answer: 'Will Bryk'
+        choices: [{ message: { content: 'Will Bryk', citations: [] } }]
       })
     });
 
     EXA('Return only the CEO name', 'Exa AI');
 
     expect(UrlFetchApp.fetch).toHaveBeenCalledWith(
-      'https://api.exa.ai/answer',
+      'https://api.exa.ai/chat/completions',
       expect.objectContaining({ method: 'post' })
     );
 
     const callArgs = UrlFetchApp.fetch.mock.calls[0][1];
     const payload = JSON.parse(callArgs.payload);
     
-    expect(payload.type).toBe('deep');
-    expect(payload.query).toBe('Return only the CEO name: Exa AI');
+    expect(payload.extraBody.type).toBe('deep');
+    expect(payload.messages).toContainEqual(
+      expect.objectContaining({ role: 'user', content: 'Return only the CEO name: Exa AI' })
+    );
+    expect(payload.messages).toContainEqual(
+      expect.objectContaining({ role: 'system' })
+    );
   });
 
   test('should combine prompt and context', () => {
     UrlFetchApp.fetch.mockReturnValue({
       getResponseCode: () => 200,
       getContentText: () => JSON.stringify({
-        answer: 'https://exa.ai'
+        choices: [{ message: { content: 'https://exa.ai', citations: [] } }]
       })
     });
 
@@ -536,14 +541,16 @@ describe('EXA (simplified wrapper)', () => {
     const callArgs = UrlFetchApp.fetch.mock.calls[0][1];
     const payload = JSON.parse(callArgs.payload);
     
-    expect(payload.query).toBe('Return only the company website URL: Exa AI');
+    expect(payload.messages).toContainEqual(
+      expect.objectContaining({ role: 'user', content: 'Return only the company website URL: Exa AI' })
+    );
   });
 
   test('should work without context', () => {
     UrlFetchApp.fetch.mockReturnValue({
       getResponseCode: () => 200,
       getContentText: () => JSON.stringify({
-        answer: 'Paris'
+        choices: [{ message: { content: 'Paris', citations: [] } }]
       })
     });
 
@@ -552,21 +559,46 @@ describe('EXA (simplified wrapper)', () => {
     const callArgs = UrlFetchApp.fetch.mock.calls[0][1];
     const payload = JSON.parse(callArgs.payload);
     
-    expect(payload.query).toBe('What is the capital of France?');
-    expect(payload.type).toBe('deep');
+    expect(payload.messages).toContainEqual(
+      expect.objectContaining({ role: 'user', content: 'What is the capital of France?' })
+    );
+    expect(payload.extraBody.type).toBe('deep');
   });
 
   test('should return the answer text', () => {
     UrlFetchApp.fetch.mockReturnValue({
       getResponseCode: () => 200,
       getContentText: () => JSON.stringify({
-        answer: '150 employees'
+        choices: [{ message: { content: '150 employees', citations: [] } }]
       })
     });
 
     const result = EXA('Return only the company headcount', 'Exa AI');
     
     expect(result).toBe('150 employees');
+  });
+
+  test('should follow formatting instructions via system prompt', () => {
+    UrlFetchApp.fetch.mockReturnValue({
+      getResponseCode: () => 200,
+      getContentText: () => JSON.stringify({
+        choices: [{ message: { content: 'Sam Altman', citations: [] } }]
+      })
+    });
+
+    EXA('who is the ceo of OpenAI, please ensure you only use the first and last name');
+
+    const callArgs = UrlFetchApp.fetch.mock.calls[0][1];
+    const payload = JSON.parse(callArgs.payload);
+    
+    // Should route through chat completions so the model can follow instructions
+    expect(UrlFetchApp.fetch).toHaveBeenCalledWith(
+      'https://api.exa.ai/chat/completions',
+      expect.anything()
+    );
+    // System prompt should be present to enforce instruction-following
+    expect(payload.messages[0].role).toBe('system');
+    expect(payload.messages[0].content).toContain('formatting instructions');
   });
 });
 
