@@ -501,7 +501,7 @@ describe('EXA (simplified wrapper)', () => {
     expect(result).toContain('No API key set');
   });
 
-  test('should use /search with outputSchema and highlights', () => {
+  test('should use /search with systemPrompt, outputSchema, and highlights', () => {
     UrlFetchApp.fetch.mockReturnValue({
       getResponseCode: () => 200,
       getContentText: () => JSON.stringify({
@@ -523,6 +523,7 @@ describe('EXA (simplified wrapper)', () => {
     expect(payload.query).toBe('Return only the CEO name: Exa AI');
     expect(payload.type).toBe('auto');
     expect(payload.numResults).toBe(10);
+    expect(payload.systemPrompt).toContain('No citations');
     expect(payload.outputSchema).toEqual({ type: 'text', description: 'Return only the CEO name' });
     expect(payload.contents).toEqual({ highlights: { maxCharacters: 4000 } });
   });
@@ -577,7 +578,21 @@ describe('EXA (simplified wrapper)', () => {
     expect(result).toBe('150 employees');
   });
 
-  test('should pass prompt as outputSchema description for formatting', () => {
+  test('should strip inline citation markers from output', () => {
+    UrlFetchApp.fetch.mockReturnValue({
+      getResponseCode: () => 200,
+      getContentText: () => JSON.stringify({
+        output: { content: 'Sam Altman is the CEO of OpenAI [1][2][3]' },
+        results: []
+      })
+    });
+
+    const result = EXA('who is the ceo of OpenAI');
+    
+    expect(result).toBe('Sam Altman is the CEO of OpenAI');
+  });
+
+  test('should use systemPrompt and outputSchema description for formatting', () => {
     UrlFetchApp.fetch.mockReturnValue({
       getResponseCode: () => 200,
       getContentText: () => JSON.stringify({
@@ -595,6 +610,8 @@ describe('EXA (simplified wrapper)', () => {
       'https://api.exa.ai/search',
       expect.anything()
     );
+    expect(payload.systemPrompt).toContain('formatting instructions');
+    expect(payload.systemPrompt).toContain('No citations');
     expect(payload.outputSchema.type).toBe('text');
     expect(payload.outputSchema.description).toBe('who is the ceo of OpenAI, please ensure you only use the first and last name');
   });

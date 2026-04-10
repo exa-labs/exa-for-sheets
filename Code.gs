@@ -425,11 +425,16 @@ function EXA(prompt, context) {
 
   const query = context ? `${prompt}: ${context}` : prompt;
 
+  const systemPrompt = 'Follow the user\'s formatting instructions exactly. ' +
+    'Return only the requested information with no extra commentary. ' +
+    'No citations, no markdown formatting, no brackets like [1][2].';
+
   const payload = {
     query: query,
     numResults: 10,
     type: 'auto',
     stream: false,
+    systemPrompt: systemPrompt,
     outputSchema: {
       type: 'text',
       description: prompt
@@ -456,7 +461,8 @@ function EXA(prompt, context) {
     if (responseCode === 200) {
       const result = JSON.parse(responseBody);
       if (result.output && result.output.content) {
-        return result.output.content;
+        // Strip any remaining inline citation markers like [1], [2][3], etc.
+        return result.output.content.replace(/\s*\[\d+\](\[\d+\])*/g, '').trim();
       } else if (result.results && result.results.length > 0) {
         return result.results[0].url;
       }
