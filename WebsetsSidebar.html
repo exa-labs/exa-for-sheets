@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* Exa Brand Typography: Diatype (secondary/body), Arizona Flare (primary/headers) */
+    body {
+      font-family: 'ABC Diatype', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 13px;
+      color: #111827; /* Dark text for clarity */
+      padding: 20px 16px;
+      background: #ffffff; /* Exa Pure White */
+      line-height: 1.5;
+    }
+
+    /* ── Brand Header ───────────────────────────────────────── */
+    .brand-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 24px;
+    }
+    
+    /* Approximating Exa wordmark */
+    .exa-logo {
+      font-family: 'ABC Arizona Flare', 'ABC Diatype', 'Inter', sans-serif;
+      font-size: 24px;
+      font-weight: 700;
+      color: #1E40ED; /* Exa Signature Blue */
+      letter-spacing: -0.03em;
+    }
+    
+    .header-subtitle {
+      font-size: 14px;
+      font-weight: 500;
+      color: #6b7280;
+      margin-top: 4px;
+    }
+
+    /* ── Connection banner ──────────────────────────────── */
+    .banner {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 12px; border-radius: 6px;
+      font-size: 12px; font-weight: 500;
+      margin-bottom: 20px;
+    }
+    .banner .dot {
+      width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+    }
+    .banner.disconnected { background: #FAF9F8; color: #6b7280; border: 1px solid #e5e7eb; }
+    .banner.disconnected .dot { background: #9ca3af; }
+    .banner.connecting { background: #eff6ff; color: #1E40ED; }
+    .banner.connecting .dot { background: #1E40ED; animation: pulse 1s infinite; }
+    .banner.connected { background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; }
+    .banner.connected .dot { background: #10b981; }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+    /* ── Form fields ───────────────────────────────────── */
+    .field { margin-bottom: 16px; }
+    label {
+      display: block; font-weight: 500; margin-bottom: 6px;
+      font-size: 12px; color: #374151;
+    }
+    input[type="text"], input[type="password"] {
+      width: 100%; padding: 10px 12px;
+      border: 1px solid #d1d5db; border-radius: 6px;
+      font-size: 13px; font-family: inherit;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      outline: none; background: #FAF9F8; /* Exa Marble for inputs */
+    }
+    input:focus {
+      border-color: #1E40ED;
+      box-shadow: 0 0 0 3px rgba(30, 64, 237, 0.1);
+      background: #ffffff;
+    }
+    input:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .saved-hint {
+      font-size: 11px; color: #6b7280; margin-top: 4px;
+    }
+
+    /* ── Checkbox (demo mode) ──────────────────────────── */
+    .checkbox-row {
+      display: flex; align-items: center; gap: 8px;
+      margin-bottom: 16px; margin-top: 4px;
+    }
+    .checkbox-row input[type="checkbox"] {
+      width: 16px; height: 16px; cursor: pointer;
+      accent-color: #1E40ED;
+    }
+    .checkbox-row label {
+      margin: 0; cursor: pointer; font-size: 12px; font-weight: 400;
+    }
+    .info-icon {
+      display: inline-flex; align-items: center; justify-content: center;
+      color: #9ca3af; cursor: default; margin-left: 2px;
+      transition: color 0.2s;
+    }
+    .info-icon:hover { color: #1E40ED; }
+
+    /* ── Buttons ────────────────────────────────────────── */
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+      width: 100%; padding: 10px 16px;
+      border: none; border-radius: 6px;
+      font-size: 13px; font-weight: 500; font-family: 'ABC Diatype', 'Inter', sans-serif;
+      cursor: pointer;
+      transition: transform 0.2s ease-in-out, background 0.2s;
+    }
+    .btn:active { transform: scale(0.98); }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+    .btn-primary, .btn-success {
+      position: relative;
+      z-index: 0;
+      color: #ffffff;
+      background: linear-gradient(180deg, #001651 0%, #0040F0 100%);
+      box-shadow: inset 0 -1.5px 2px 0 #638DFF, inset 0 0 10px 0 #0043FB, inset 0 0 8px 0 #0043FB;
+      transition: all 200ms ease-in-out;
+    }
+    
+    .btn-primary::before, .btn-success::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      z-index: -1;
+      opacity: 0;
+      transition: opacity 200ms ease-in-out;
+      background: linear-gradient(180deg, #001E8A 9%, #013EFF 100%);
+      box-shadow: inset 0 -0.5px 1px 0 #5CCEFF, inset 0 -1px 3px 0 #5CCEFF, inset 0 -1.5px 5px 0 #5CC3FF, inset 0 0 12px 0 #0055DB, inset 0 0 10px 0 #0055DB;
+    }
+
+    .btn-primary:hover:not(:disabled), .btn-success:hover:not(:disabled) {
+      transform: scale(1.03);
+    }
+    
+    .btn-primary:hover:not(:disabled)::before, .btn-success:hover:not(:disabled)::before {
+      opacity: 1;
+    }
+
+    .btn-secondary {
+      background: #FAF9F8; /* Exa Marble */
+      color: #374151; 
+      border: 1px solid #d1d5db;
+      margin-top: 10px;
+    }
+    .btn-secondary:hover:not(:disabled) { background: #f3f4f6; }
+
+    .time-chip {
+      background: rgba(30, 64, 237, 0.1);
+      color: #1E40ED;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: 600;
+      margin-left: 4px;
+    }
+
+    .btn-success {
+      margin-top: 10px;
+    }
+
+    .btn-danger {
+      background: #ffffff; color: #dc2626;
+      border: 1px solid #fca5a5; margin-top: 10px;
+    }
+    .btn-danger:hover:not(:disabled) { background: #fef2f2; }
+
+    /* ── Status messages ───────────────────────────────── */
+    .status {
+      margin-top: 12px; padding: 10px 12px;
+      border-radius: 6px; font-size: 12px;
+      display: none; line-height: 1.4;
+    }
+    .status.success {
+      display: block; background: #ecfdf5; color: #065f46;
+      border: 1px solid #a7f3d0;
+    }
+    .status.error {
+      display: block; background: #fef2f2; color: #991b1b;
+      border: 1px solid #fecaca;
+    }
+    .status.info {
+      display: block; background: #eff6ff; color: #1E40ED;
+      border: 1px solid #bfdbfe;
+    }
+
+    /* ── Divider ────────────────────────────────────────── */
+    .divider { border: none; border-top: 1px solid #e5e7eb; margin: 24px 0; }
+
+    /* ── Section headers ───────────────────────────────── */
+    .section-title {
+      font-size: 11px; font-weight: 600; color: #6b7280;
+      text-transform: uppercase; letter-spacing: 0.05em;
+      margin-bottom: 12px;
+    }
+
+    /* ── Sync info row ─────────────────────────────────── */
+    .info-row {
+      display: flex; justify-content: space-between; align-items: center;
+      font-size: 11px; color: #6b7280; margin-bottom: 8px;
+    }
+    .info-row .value { font-weight: 500; color: #374151; }
+
+    /* ── Spinner ────────────────────────────────────────── */
+    .spinner {
+      display: inline-block; width: 14px; height: 14px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: #fff; border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+    }
+    .btn-secondary .spinner {
+      border: 2px solid rgba(30,64,237,0.2);
+      border-top-color: #1E40ED;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Footer ─────────────────────────────────────────── */
+    .footer {
+      margin-top: 20px; font-size: 10px; color: #9ca3af; line-height: 1.5;
+    }
+    .footer a { color: #1E40ED; text-decoration: none; }
+    .footer a:hover { text-decoration: underline; }
+
+    .auto-toggle {
+      display: inline-flex; align-items: center; justify-content: center;
+      padding: 4px 12px; border-radius: 16px;
+      font-size: 11px; font-weight: 600; cursor: pointer;
+      border: 1px solid #d1d5db; background: #ffffff; color: #6b7280;
+      transition: all 0.2s;
+    }
+    .auto-toggle:hover { background: #f3f4f6; }
+    .auto-toggle.on { background: #1E40ED; color: #ffffff; border-color: #1E40ED; }
+    .auto-toggle.on:hover { background: #1a36c9; }
+  </style>
+</head>
+<body>
+
+  <!-- Brand Header -->
+  <div class="brand-header">
+    <div class="exa-logo" style="display:flex; align-items:center;">
+      <svg width="18" height="22" viewBox="0 0 151 182" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M150.5 14.1064C150.5 14.3356 150.421 14.5579 150.277 14.736L88.4766 91L150.277 167.264C150.421 167.442 150.5 167.664 150.5 167.894V181C150.5 181.552 150.052 182 149.5 182H1C0.44772 182 0 181.552 0 181V0.999995C0 0.44771 0.447715 0 1 0H149.5C150.052 0 150.5 0.447715 150.5 1V14.1064ZM30.4059 162.719H121.728L76.0664 106.326L30.4059 162.719ZM19.2949 100.261V145.787L56.1572 100.261H19.2949ZM19.2949 80.9801H55.5434L19.2949 36.2121V80.9801ZM76.0664 75.6731L121.728 19.281H30.4059L76.0664 75.6731Z" fill="#0143D9"/>
+      </svg>
+    </div>
+    <div class="header-subtitle">Websets Sync</div>
+  </div>
+
+  <!-- Connection banner -->
+  <div class="banner disconnected" id="connBanner">
+    <span class="dot"></span>
+    <span id="connText">Not connected</span>
+  </div>
+
+  <!-- ── Configuration ────────────────────────────────── -->
+  <div class="section-title">Configuration</div>
+
+  <form id="configForm" onsubmit="return false;">
+    <div class="field">
+      <label for="apiKey">Exa API Key</label>
+      <input type="password" id="apiKey" placeholder="Paste your exa-… key" autocomplete="off">
+      <div class="saved-hint" id="keyHint"></div>
+    </div>
+
+    <div class="field">
+      <label for="websetId">Webset ID</label>
+      <input type="text" id="websetId" placeholder="e.g. abc123-def456">
+    </div>
+
+    <div class="checkbox-row">
+      <input type="checkbox" id="demoMode" onclick="handleDemoToggle()">
+      <label for="demoMode">Demo mode</label>
+      <div class="info-icon" title="Uses 25 sample AI startups to test the sheet without requiring an Exa Pro API key.">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="12" y1="16" x2="12" y2="12"></line>
+          <line x1="12" y1="8" x2="12.01" y2="8"></line>
+        </svg>
+      </div>
+    </div>
+
+    <button class="btn btn-primary" id="saveBtn" onclick="handleSave()">
+      Save &amp; Verify Connection
+    </button>
+
+    <div class="status" id="statusMsg"></div>
+  </form>
+
+  <hr class="divider">
+
+  <!-- ── Sync Actions ─────────────────────────────────── -->
+  <div class="section-title">Sync</div>
+
+  <div class="info-row" id="lastSyncRow" style="display:none;">
+    <span>Last synced</span>
+    <span class="value" id="lastSyncTime">—</span>
+  </div>
+
+  <button class="btn btn-success" id="syncBtn" onclick="handleSyncNow()">
+    Sync Now
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-left: 2px; opacity: 0.8;"><polyline points="9 10 4 15 9 20"></polyline><path d="M20 4v7a4 4 0 0 1-4 4H4"></path></svg>
+  </button>
+
+  <hr class="divider">
+
+  <!-- ── Auto-Refresh ─────────────────────────────────── -->
+  <div class="section-title" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0;">
+    AUTO-REFRESH
+    <button class="auto-toggle" id="autoBadge" onclick="toggleAutoRefresh()">OFF</button>
+  </div>
+
+  <hr class="divider">
+
+  <!-- ── Danger zone ──────────────────────────────────── -->
+  <button class="btn btn-danger" onclick="handleReset()">
+    Reset Configuration
+  </button>
+
+  <div class="footer">
+    API key stored securely in Apps Script.<br>
+    Get a key at <a href="https://dashboard.exa.ai/api-keys" target="_blank">dashboard.exa.ai</a>
+  </div>
+
+  <script>
+    // ── State ──────────────────────────────────────────
+    var autoRefreshOn = false;
+
+    // ── Init ───────────────────────────────────────────
+    document.addEventListener('DOMContentLoaded', function() {
+      // Focus flow
+      setTimeout(() => document.getElementById('apiKey').focus(), 100);
+      document.getElementById('apiKey').addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') { e.preventDefault(); document.getElementById('websetId').focus(); }
+      });
+      document.getElementById('websetId').addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') { e.preventDefault(); handleSave(); }
+      });
+
+      google.script.run
+        .withSuccessHandler(onConfigLoaded)
+        .withFailureHandler(function(e) { showStatus('error', 'Failed to load config: ' + e); })
+        .getWebsetsConfig();
+
+      google.script.run
+        .withSuccessHandler(onAutoRefreshStatus)
+        .withFailureHandler(function() {})
+        .websetsGetAutoRefreshStatus();
+    });
+
+    function onConfigLoaded(cfg) {
+      if (cfg.hasApiKey) {
+        document.getElementById('keyHint').textContent = '✓ API key saved';
+      }
+      if (cfg.websetId) {
+        document.getElementById('websetId').value = cfg.websetId;
+      }
+      if (cfg.lastSync) {
+        document.getElementById('lastSyncRow').style.display = 'flex';
+        document.getElementById('lastSyncTime').textContent = formatTime(cfg.lastSync);
+      }
+      if (cfg.demoMode) {
+        document.getElementById('demoMode').checked = true;
+        toggleApiFields(true);
+        setBanner('connected', 'Demo mode — sample data');
+      } else if (cfg.hasApiKey && cfg.websetId) {
+        setBanner('connected', 'Connected — ready to sync');
+      }
+    }
+
+    function onAutoRefreshStatus(result) {
+      if (result && result.enabled) {
+        autoRefreshOn = true;
+        document.getElementById('autoBadge').textContent = 'ON';
+        document.getElementById('autoBadge').className = 'auto-toggle on';
+      }
+    }
+
+    // ── Helpers ─────────────────────────────────────────
+    function setBanner(state, text) {
+      var b = document.getElementById('connBanner');
+      b.className = 'banner ' + state;
+      document.getElementById('connText').textContent = text;
+    }
+
+    function showStatus(type, msg) {
+      if (msg && msg.indexOf('PERMISSION_DENIED') !== -1) {
+        msg = "Google Accounts Bug: Please open an Incognito window and log into a single Google account to use this add-on.";
+      }
+      var el = document.getElementById('statusMsg');
+      el.className = 'status ' + type;
+      el.textContent = msg;
+    }
+
+    function formatTime(iso) {
+      try {
+        var d = new Date(iso);
+        return d.toLocaleString(undefined, {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'});
+      } catch(e) { return iso; }
+    }
+
+    function toggleApiFields(disabled) {
+      document.getElementById('apiKey').disabled = disabled;
+      document.getElementById('websetId').disabled = disabled;
+      if (disabled) document.getElementById('apiKey').value = '';
+    }
+
+    // ── Demo Mode ──────────────────────────────────────
+    function handleDemoToggle() {
+      var on = document.getElementById('demoMode').checked;
+      toggleApiFields(on);
+      google.script.run.setWebsetsDemoMode(on);
+      if (on) {
+        setBanner('connected', 'Demo mode — sample data');
+        showStatus('info', 'Demo mode on — Sync Now will use sample companies.');
+      } else {
+        setBanner('disconnected', 'Not connected');
+        showStatus('info', 'Demo mode off — enter API key and Webset ID.');
+      }
+    }
+
+    // ── Save & Verify ──────────────────────────────────
+    function handleSave() {
+      var demo = document.getElementById('demoMode').checked;
+      var key = document.getElementById('apiKey').value.trim();
+      var wsId = document.getElementById('websetId').value.trim();
+      var btn = document.getElementById('saveBtn');
+
+      if (demo) {
+        // Demo mode — save demo config and verify mock
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner"></span> Verifying…';
+        setBanner('connecting', 'Connecting…');
+
+        google.script.run
+          .withSuccessHandler(function(r) {
+            btn.disabled = false;
+            btn.textContent = 'Save & Verify Connection';
+            if (r && r.valid) {
+              setBanner('connected', 'Demo mode — sample data');
+              showStatus('success', '✓ Demo connected! Webset: "' + (r.title || 'Demo Webset') + '"');
+            } else {
+              setBanner('disconnected', 'Not connected');
+              showStatus('error', 'Demo verification failed.');
+            }
+          })
+          .withFailureHandler(function(e) {
+            btn.disabled = false;
+            btn.textContent = 'Save & Verify Connection';
+            setBanner('disconnected', 'Not connected');
+            showStatus('error', 'Error: ' + e);
+          })
+          .websetsVerifyConnection('demo-key', 'demo-webset-001');
+        return;
+      }
+
+      if (!key || !wsId) {
+        showStatus('error', 'Both API key and Webset ID are required (or enable Demo mode).');
+        return;
+      }
+
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> Verifying…';
+      setBanner('connecting', 'Checking API key…');
+
+      google.script.run
+        .withSuccessHandler(function(r) {
+          btn.disabled = false;
+          btn.textContent = 'Save & Verify Connection';
+          if (r && r.valid) {
+            // Save API key via existing Exa function
+            google.script.run.saveApiKey(key);
+            // Save Webset ID via our Config
+            google.script.run.saveWebsetsConfig(wsId);
+
+            setBanner('connected', 'Connected — ready to sync');
+            showStatus('success', '✓ Connected! Webset: "' + (r.title || wsId) + '"');
+            document.getElementById('keyHint').textContent = '✓ API key saved';
+            document.getElementById('apiKey').value = '';
+          } else {
+            setBanner('disconnected', 'Not connected');
+            showStatus('error', '✗ ' + (r.error || 'Verification failed'));
+          }
+        })
+        .withFailureHandler(function(e) {
+          btn.disabled = false;
+          btn.textContent = 'Save & Verify Connection';
+          setBanner('disconnected', 'Not connected');
+          showStatus('error', 'Connection failed: ' + e);
+        })
+        .websetsVerifyConnection(key, wsId);
+    }
+
+    // ── Sync Now ───────────────────────────────────────
+    function handleSyncNow() {
+      var btn = document.getElementById('syncBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> Syncing…';
+      showStatus('info', 'Fetching items and writing to sheet…');
+
+      google.script.run
+        .withSuccessHandler(function(r) {
+          btn.disabled = false;
+          btn.innerHTML = 'Sync Now';
+          if (r && r.error) {
+            showStatus('error', 'Sync failed: ' + r.error);
+          } else {
+            showStatus('success', '✓ Synced: ' + r.added + ' added, ' + r.updated + ' updated');
+            document.getElementById('lastSyncRow').style.display = 'flex';
+            document.getElementById('lastSyncTime').textContent = formatTime(new Date().toISOString());
+          }
+        })
+        .withFailureHandler(function(e) {
+          btn.disabled = false;
+          btn.innerHTML = 'Sync Now';
+          showStatus('error', 'Sync error: ' + e);
+        })
+        .websetsSyncNow();
+    }
+
+    // ── Auto-Refresh ───────────────────────────────────
+    function toggleAutoRefresh() {
+      var btn = document.getElementById('autoBadge');
+      var btnText = autoRefreshOn ? 'ON' : 'OFF';
+      btn.disabled = true;
+      btn.innerHTML = '...';
+
+      if (autoRefreshOn) {
+        google.script.run
+          .withSuccessHandler(function() {
+            btn.disabled = false;
+            autoRefreshOn = false;
+            btn.textContent = 'OFF';
+            btn.className = 'auto-toggle';
+            showStatus('success', '✓ Auto-refresh disabled.');
+          })
+          .withFailureHandler(function(e) { btn.disabled = false; btn.textContent = btnText; showStatus('error', 'Error: ' + e); })
+          .websetsDisableAutoRefresh();
+      } else {
+        google.script.run
+          .withSuccessHandler(function(r) {
+            btn.disabled = false;
+            if (r && r.success) {
+              autoRefreshOn = true;
+              btn.textContent = 'ON';
+              btn.className = 'auto-toggle on';
+              showStatus('success', '✓ Auto-refresh enabled — syncing every 15 minutes.');
+            } else {
+              btn.textContent = btnText;
+              showStatus('error', 'Failed: ' + (r.error || 'Unknown error'));
+            }
+          })
+          .withFailureHandler(function(e) { btn.disabled = false; btn.textContent = btnText; showStatus('error', 'Error: ' + e); })
+          .websetsEnableAutoRefresh();
+      }
+    }
+
+    // ── Reset ──────────────────────────────────────────
+    function handleReset() {
+      if (!confirm('Clear all Websets Sync configuration?')) return;
+      google.script.run
+        .withSuccessHandler(function() {
+          document.getElementById('apiKey').value = '';
+          document.getElementById('websetId').value = '';
+          document.getElementById('demoMode').checked = false;
+          toggleApiFields(false);
+          document.getElementById('keyHint').textContent = '';
+          document.getElementById('statusMsg').className = 'status';
+          document.getElementById('lastSyncRow').style.display = 'none';
+          autoRefreshOn = false;
+          document.getElementById('autoBadge').textContent = 'OFF';
+          document.getElementById('autoBadge').className = 'auto-toggle';
+          setBanner('disconnected', 'Not connected');
+          showStatus('info', 'Configuration cleared.');
+        })
+        .withFailureHandler(function(e) { showStatus('error', 'Error: ' + e); })
+        .clearWebsetsConfig();
+    }
+  </script>
+
+</body>
+</html>

@@ -63,12 +63,44 @@ function onOpen() {
     .addSeparator()
     .addItem('About/Help', 'showAbout')
     .addToUi();
+
+  // Websets Sync — added by websets-sheets-sync fork
+  SpreadsheetApp.getUi()
+    .createMenu('Websets Sync')
+    .addItem('Open Sidebar', 'showWebsetsSidebar')
+    .addSeparator()
+    .addItem('Sync Now', 'websetsSyncNow')
+    .addSeparator()
+    .addItem('Enable Auto-Refresh (15 min)', 'websetsEnableAutoRefresh')
+    .addItem('Disable Auto-Refresh', 'websetsDisableAutoRefresh')
+    .addSeparator()
+    .addItem('Reset Websets Config', 'websetsClearConfig')
+    .addToUi();
 }
 
 function showSidebar() {
   var html = HtmlService.createHtmlOutputFromFile('Sidebar')
     .setTitle('Exa AI');
   SpreadsheetApp.getUi().showSidebar(html);
+}
+
+/**
+ * Opens the Websets Sync configuration sidebar.
+ * Added by websets-sheets-sync fork.
+ */
+function showWebsetsSidebar() {
+  var html = HtmlService.createHtmlOutputFromFile('WebsetsSidebar')
+    .setTitle('Websets Sync');
+  SpreadsheetApp.getUi().showSidebar(html);
+}
+
+/**
+ * Clears all Websets configuration (wrapper for menu item).
+ * Added by websets-sheets-sync fork.
+ */
+function websetsClearConfig() {
+  clearWebsetsConfig();
+  SpreadsheetApp.getUi().alert('Websets Sync configuration has been reset.');
 }
 
 function showAbout() {
@@ -88,7 +120,18 @@ function showAbout() {
  * @return {Object} Object containing all saved API keys and metadata
  */
 function getAllApiKeys() {
-  const keysJson = PropertiesService.getUserProperties().getProperty('EXA_API_KEYS');
+  let keysJson = null;
+  try {
+    keysJson = PropertiesService.getUserProperties().getProperty('EXA_API_KEYS');
+    if (!keysJson) keysJson = CacheService.getUserCache().get('EXA_API_KEYS');
+  } catch (e) {
+    try {
+      keysJson = CacheService.getUserCache().get('EXA_API_KEYS');
+    } catch (e2) {
+      return { keys: {}, activeKeyName: null };
+    }
+  }
+  
   if (!keysJson) {
     return { keys: {}, activeKeyName: null };
   }
@@ -106,7 +149,18 @@ function getAllApiKeys() {
  * @param {Object} keysData Object containing all keys and the active key name
  */
 function saveAllApiKeys(keysData) {
-  PropertiesService.getUserProperties().setProperty('EXA_API_KEYS', JSON.stringify(keysData));
+  var str = JSON.stringify(keysData);
+  try {
+    PropertiesService.getUserProperties().setProperty('EXA_API_KEYS', str);
+    CacheService.getUserCache().put('EXA_API_KEYS', str, 21600); // Also cache it
+  } catch (e) {
+    try {
+      CacheService.getUserCache().put('EXA_API_KEYS', str, 21600);
+    } catch (e2) {
+      Logger.log('saveAllApiKeys storage error: ' + e);
+      throw new Error('Storage permission denied. If you have multiple Google accounts logged in, please use an Incognito window.');
+    }
+  }
 }
 
 /**
@@ -364,7 +418,11 @@ function getAllApiKeysForUI() {
  */
 function removeApiKey() {
   // Clear all keys
-  PropertiesService.getUserProperties().deleteProperty('EXA_API_KEYS');
+  try {
+    PropertiesService.getUserProperties().deleteProperty('EXA_API_KEYS');
+  } catch (e) {
+    Logger.log('removeApiKey storage error: ' + e);
+  }
 
   return {
     success: true,
@@ -397,8 +455,17 @@ function getApiKeyForUI() {
  * @return {boolean} Always returns true if authorization succeeds
  */
 function ensureAuthorized() {
-  PropertiesService.getUserProperties().getProperty('EXA_API_KEYS');
-  return true;
+  try {
+    PropertiesService.getUserProperties().getProperty('EXA_API_KEYS');
+    return true;
+  } catch (e) {
+    try {
+      CacheService.getUserCache().get('EXA_API_KEYS');
+      return true;
+    } catch (e2) {
+      return false;
+    }
+  }
 }
 
 /**
