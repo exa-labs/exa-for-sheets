@@ -1,194 +1,172 @@
-# Exa Google Sheets Extension
+# Exa for Google Sheets
 
-## Description
+Use Exa inside Google Sheets to research the web, generate tables, and fill missing data.
 
-This Google Apps Script integration brings the power of the Exa API directly into Google Sheets, allowing you to search the web, query information, find similar content, and extract website content without leaving your spreadsheet.
+Install the add-on from the [Google Workspace Marketplace](https://workspace.google.com/marketplace/app/exa_ai/465545439521).
 
-## Features
+This repo contains the Google Apps Script code for the Exa AI Google Sheets add-on.
 
-### Custom Sheet Functions
-* **EXA:** Simplified function for quick data enrichment - just describe what you want
-* **EXA_ANSWER:** Query the Exa AI with advanced options (system prompts, structured output)
-* **EXA_SEARCH:** Search the web with domain and category filtering
-* **EXA_CONTENTS:** Extract the text content from specific URLs
-* **EXA_FINDSIMILAR:** Find URLs similar to a provided reference URL
+## What You Can Do
 
-### Sidebar Interface
-* **API Key Management:** Securely save your Exa API key
-* **Documentation:** Built-in reference for all Exa functions and their parameters
-* **Batch Refresh:** Refresh multiple Exa function cells at once
-* **Convert to Values:** Freeze results to prevent auto-refresh charges
+- Generate full research tables from one prompt
+- Fill blank cells in an existing table
+- Continue a table by adding new rows
+- Use `=EXA(...)` formulas for quick one-cell answers
+- Refresh many Exa formula cells at once
+- Convert Exa formulas to normal values
 
-## Setup & Installation
+## Install
 
-1.  **Open your Google Sheet:** Go to the Google Sheet where you want to use this script.
-2.  **Open the Script Editor:** Click on "Extensions" > "Apps Script".
-3.  **Copy the Code:**
-    *   Copy the contents of `Code.gs` from this project and paste it into the `Code.gs` file in the Apps Script editor. Overwrite any existing template code.
-    *   Create a new HTML file in the editor (File > New > HTML file). Name it `Sidebar.html` (ensure the name matches exactly, including capitalization).
-    *   Copy the contents of the `Sidebar.html` file from this project and paste it into the newly created `Sidebar.html` file in the editor.
-4.  **Save the Project:** Click the floppy disk icon (Save project) and give your script project a name (e.g., "Exa for Sheets").
-5.  **Refresh Your Sheet:** Close the Apps Script editor tab and refresh your Google Sheet browser tab.
-6.  **Authorize the Script:**
-    *   After refreshing, a new custom menu item "Exa AI" should appear. Click on it, then select "Open Sidebar".
-    *   A dialog box will pop up asking for authorization. Review the permissions requested (it will need access to external services, script properties, and the current spreadsheet) and click "Allow". You might need to go through an "Advanced" > "Go to (project name)" flow if Google warns it's an unverified app.
-7.  **Set Your API Key:**
-    *   Once authorized, the sidebar will open with the API Key tab active.
-    *   Go to [https://exa.ai/](https://exa.ai/) to get your API key if you don't have one.
-    *   Paste your Exa API key into the input field in the sidebar and click "Save API Key".
-    *   You should see a success message "API key saved successfully.".
+The easiest way is to install the public add-on:
 
-## Using the Sidebar
+1. Open the [Exa AI add-on](https://workspace.google.com/marketplace/app/exa_ai/465545439521) in the Google Workspace Marketplace.
+2. Click **Install**.
+3. Open a Google Sheet.
+4. Go to **Extensions -> Exa AI -> Open Sidebar**.
+5. Add your Exa API key from the [Exa dashboard](https://dashboard.exa.ai/api-keys).
 
-The sidebar offers three main tabs:
+You are ready to use Exa in Google Sheets.
 
-### 1. API Key
-* Set or update your Exa API key
-* View status of key operations
+## Exa Agent
 
-### 2. Batch
-* Refresh selected cells containing Exa functions
-* Status updates for refresh operations
+Exa Agent is the easiest way to use Exa in Sheets.
 
-### 3. Documentation
-* Comprehensive documentation for all Exa functions
-* Parameter descriptions and return value information
-* Quick reference for function syntax
+Open the sidebar, then go to **Exa Agent**.
 
-## Using Exa Functions
+### Generate Table
 
-### EXA (Simplified)
-```
-=EXA(prompt, [context])
-```
-The easiest way to enrich data. Just describe what information you want.
+Use **Generate table** when you want Exa to create a new table.
 
-**Examples:**
-```
-=EXA("Return the CEO name", A1)
-=EXA("Return the company website URL", A1)
-=EXA("Return the Amazon rating of this product", A1)
+Example prompt:
+
+```text
+Find top 40 AI companies and return company name, website URL, CEO, founding date, headquarters, and a short description.
 ```
 
-### EXA_ANSWER
-```
-=EXA_ANSWER(prompt, [prefix], [suffix], [includeCitations], [systemPrompt], [outputSchema], [returnRawJson])
-```
-Advanced AI answers with full control over output format.
+Exa researches the web and writes the table into your sheet.
 
-**Parameters:**
-* `prompt` (required): The main question or prompt
-* `prefix` (optional): Text to add before the main prompt
-* `suffix` (optional): Text to add after the main prompt
-* `includeCitations` (optional): If TRUE, includes source citations (Default: FALSE)
-* `systemPrompt` (optional): Control output format (e.g., "only return a number")
-* `outputSchema` (optional): JSON schema for structured output. Generate at https://dashboard.exa.ai/playground/answer
-* `returnRawJson` (optional): If TRUE with outputSchema, returns raw JSON instead of extracted value
+By default, the table starts at your selected cell. You can choose another start cell in **More options**.
 
-**Examples:**
-```
-=EXA_ANSWER("OpenAI CEO", "", "", FALSE, "only return a name")
-=EXA_ANSWER("ceo of exa.ai", "", "", FALSE, "", "{""type"":""object"",""properties"":{""name"":{""type"":""string""}}}")
-```
+### Fill Cells
 
-### EXA_SEARCH
-```
-=EXA_SEARCH(query, [numResults], [searchType], [prefix], [suffix], [includeDomainsStr], [excludeDomainsStr], [category])
-```
-Searches the web and returns a vertical list of URLs.
+Use **Fill cells** when you already have a table and want Exa to fill missing data.
 
-**Parameters:**
-* `query` (required): The search query
-* `numResults` (optional): Number of results to return (1-10, Default: 1)
-* `searchType` (optional): "auto", "neural", or "keyword" (Default: "auto")
-* `prefix` (optional): Text to add before the main query
-* `suffix` (optional): Text to add after the main query
-* `includeDomainsStr` (optional): Comma-separated domains to include (e.g., "linkedin.com,crunchbase.com")
-* `excludeDomainsStr` (optional): Comma-separated domains to exclude
-* `category` (optional): Filter by type - "company", "research paper", "news", "github", "pdf", etc.
+1. Select blank cells in your sheet.
+2. Open **Exa Agent**.
+3. Choose **Fill cells**.
+4. Click **Fill selected cells**.
 
-**Examples:**
-```
-=EXA_SEARCH("AI startups", 5, "auto", "", "", "linkedin.com,crunchbase.com")
-=EXA_SEARCH("transformer architecture", 5, "auto", "", "", "", "", "research paper")
+Exa uses the table around your selection as context.
+
+You can also select blank rows under a table. Exa will try to continue the table with new rows that match the same columns.
+
+## Formula
+
+Use `=EXA(...)` when you want one answer in one cell.
+
+```text
+=EXA("Return only the CEO name", A2)
 ```
 
-### EXA_CONTENTS
+The second value, like `A2`, is the context. You can drag the formula down a column to run it for many rows.
+
+More examples:
+
+```text
+=EXA("Return only the company website URL", A2)
+=EXA("Return only the headquarters", A2)
+=EXA("Return only the LinkedIn URL", A2)
 ```
-=EXA_CONTENTS(url)
+
+## Batch
+
+Use **Batch** when you want to work with many Exa formula cells at once.
+
+Batch can:
+
+- refresh selected cells with Exa formulas
+- convert selected Exa formulas into normal values
+
+Convert formulas to values when you want to keep the current results and stop the formulas from running again.
+
+## Advanced Functions
+
+The add-on also includes lower-level custom functions:
+
+| Function | What it does |
+| --- | --- |
+| `EXA(prompt, context)` | Simple one-cell enrichment |
+| `EXA_SEARCH(query, ...)` | Search the web and return URLs |
+| `EXA_ANSWER(prompt, ...)` | Ask Exa for an answer |
+| `EXA_CONTENTS(url)` | Get page content from a URL |
+| `EXA_FINDSIMILAR(url, ...)` | Find pages similar to a URL |
+
+Most users should start with **Exa Agent** or `=EXA(...)`.
+
+## Local Development
+
+This project uses Google Apps Script and `clasp`.
+
+### Requirements
+
+- Node.js 14 or newer
+- A Google account
+- An Exa API key
+
+### Setup
+
+Install dependencies:
+
+```bash
+npm ci
 ```
-Retrieves the text content from a specified URL.
 
-**Parameters:**
-* `url` (required): The full URL to extract content from (must start with http/https)
+Log in to Google:
 
-### EXA_FINDSIMILAR
+```bash
+npm run login
 ```
-=EXA_FINDSIMILAR(url, [numResults], [includeDomainsStr], [excludeDomainsStr], [includeTextStr], [excludeTextStr])
+
+Create a new Apps Script project:
+
+```bash
+npm run create
 ```
-Finds URLs similar to the input URL.
 
-**Parameters:**
-* `url` (required): The reference URL to find similar content
-* `numResults` (optional): Number of results to return (1-10, Default: 1)
-* `includeDomainsStr` (optional): Comma-separated list of domains to include
-* `excludeDomainsStr` (optional): Comma-separated list of domains to exclude
-* `includeTextStr` (optional): Phrase that must appear in results
-* `excludeTextStr` (optional): Phrase that must not appear in results
+Push the local files to Apps Script:
 
-## Batch Refresh
+```bash
+npm run push
+```
 
-To use batch refresh:
+Run tests:
 
-1. Select cells containing Exa functions in your sheet
-2. Open the sidebar and navigate to the "Batch" tab
-3. Click **Refresh Selected Cells** to re-execute the Exa functions in selected cells
+```bash
+npm test
+```
 
-## Notes
+## Manual Apps Script Setup
 
-* Exa API requests count against your Exa usage quota
-* For best performance, avoid excessive function calls in large sheets
-* Functions will automatically refresh when their inputs change or when the sheet is reopened
-* Use "Convert to Values" in the sidebar to freeze results and prevent auto-refresh charges
-* Rate limiting: The add-on automatically retries up to 3 times with exponential backoff on rate limit errors
+If you do not want to use `clasp`, you can copy the files manually.
 
----
+1. Open a Google Sheet.
+2. Go to **Extensions -> Apps Script**.
+3. Copy `Code.gs` into the Apps Script `Code.gs` file.
+4. Create an HTML file named `Sidebar.html`.
+5. Copy `Sidebar.html` from this repo into that file.
+6. Save the project.
+7. Refresh the Google Sheet.
+8. Go to **Extensions -> Exa AI -> Open Sidebar**.
+9. Add your Exa API key.
 
-## Privacy & Security
+For normal use, install the [Marketplace add-on](https://workspace.google.com/marketplace/app/exa_ai/465545439521) instead.
 
-* Your Exa API key is stored securely using Google Apps Script's User Properties service
-* The key is only accessible to your Google account
-* No data is stored outside of your Google account and the Exa API
-* View our [Privacy Policy](https://exa.ai/exa-for-sheets/privacy-policy) for details on data handling and Google API compliance
+## Project Files
 
-## Development
+- `Code.gs` - Apps Script backend, custom functions, Exa API calls, and sheet writes
+- `Sidebar.html` - sidebar UI for Settings, Exa Agent, and Batch
+- `appsscript.json` - Apps Script manifest and OAuth scopes
+- `__tests__/` - Jest tests
+- `scripts/bump-version.js` - version bump helper
 
-1. Install dependencies:
-   ```bash
-   npm install
-   ```
-
-2. Login to Google:
-   ```bash
-   npm run login
-   ```
-
-3. Create a new Google Apps Script project:
-   ```bash
-   npm run create
-   ```
-
-4. Push the code:
-   ```bash
-   npm run push
-   ```
-
-5. Run tests:
-   ```bash
-   npm test
-   ```
-
-6. Bump version (updates package.json, Code.gs, and CHANGELOG.md):
-   ```bash
-   npm run bump patch  # or minor, major
-   ```
+made with :heart: by exa
