@@ -1067,15 +1067,114 @@ function parseAgentColumns(columnsText) {
   var usedKeys = {};
   var columns = labels.map(function(label) {
     var key = normalizeAgentColumnKey(label, usedKeys);
+    var format = getAgentColumnFormat(label, key);
     var isUrlList = key === 'source_urls' || key === 'sources' || key === 'urls' || key.match(/_urls$/);
     return {
       label: label,
       key: key,
-      type: isUrlList ? 'array' : 'string'
+      type: isUrlList ? 'array' : 'string',
+      format: format
     };
   });
 
   return { success: true, columns: columns, autoColumns: false, columnInstructions: rawText };
+}
+
+/**
+ * Infers JSON Schema string formats for fields where Exa Agent has specialized enrichment.
+ * @param {string} label User-facing label
+ * @param {string} key Normalized schema key
+ * @return {string} JSON Schema format or empty string
+ */
+function getAgentColumnFormat(label, key) {
+  var text = (String(label || '') + ' ' + String(key || ''))
+    .toLowerCase()
+    .replace(/_/g, ' ');
+
+  if (/\b(e\s*mail|email|mail address|work email|business email|contact email)\b/.test(text)) {
+    return 'email';
+  }
+
+  if (/\b(phone|telephone|mobile|cell phone|contact number|business phone|office phone|tel)\b/.test(text)) {
+    return 'phone';
+  }
+
+  if (/\b(urls?|website|web site|homepage|home page|linkedin|profile links?|source links?|source urls?|link)\b/.test(text)) {
+    return 'uri';
+  }
+
+  return '';
+}
+
+function isAgentContactFormat(format) {
+  return format === 'email' || format === 'phone';
+}
+
+function getAgentFieldFormat(field) {
+  if (!field) return '';
+  return field.format || getAgentColumnFormat(
+    field.label || field.title || '',
+    field.key || field.fieldId || ''
+  );
+}
+
+function agentFieldsContainContact(fields) {
+  return Array.isArray(fields) && fields.some(function(field) {
+    return isAgentContactFormat(getAgentFieldFormat(field));
+  });
+}
+
+function textMentionsAgentContact(text) {
+  return /\b(e\s*mail|email|emails|phone|phones|telephone|mobile|contact number|business phone|office phone)\b/i.test(String(text || ''));
+}
+
+function buildAgentContactGuidance(prompt, fields, extraText) {
+  var hasContactFields = agentFieldsContainContact(fields);
+  var mentionsContact = textMentionsAgentContact(prompt) || textMentionsAgentContact(extraText);
+  if (!hasContactFields && !mentionsContact) {
+    return '';
+  }
+
+  return 'For requested email or phone fields, explicitly perform contact enrichment. ' +
+    'Search official websites plus contact, about, team, staff, privacy, support, and public directory pages where appropriate. ' +
+    'Return only publicly listed business or organization contact details that are source-verifiable and relevant to the row entity. ' +
+    'Do not guess email patterns, infer private personal contact details, or fabricate unavailable values. ' +
+    'Emails must be valid email addresses. Phone numbers must be valid phone numbers and should include country or area codes when available. ' +
+    'If multiple contacts are available, prefer the official general business contact unless the user explicitly asks for a person-specific contact.';
+}
+
+function applyAgentFormatToStringSchema(schema, format) {
+  if (format) {
+    schema.format = format;
+  }
+  return schema;
+}
+
+function inferAgentColumnsFromPrompt(prompt, parsedColumns) {
+  if (!parsedColumns || parsedColumns.autoColumns !== true || !textMentionsAgentContact(prompt)) {
+    return parsedColumns || { success: true, columns: [], autoColumns: true, columnInstructions: '' };
+  }
+
+  var text = String(prompt || '');
+  var wantsEmail = /\b(e\s*mail|email|emails|mail address|work email|business email|contact email)\b/i.test(text);
+  var wantsPhone = /\b(phone|phones|telephone|mobile|contact number|business phone|office phone)\b/i.test(text);
+  if (!wantsEmail && !wantsPhone) {
+    return parsedColumns;
+  }
+
+  var labels = ['Name', 'Website URL'];
+  if (wantsEmail) {
+    labels.push('Contact Email');
+  }
+  if (wantsPhone) {
+    labels.push('Phone Number');
+  }
+
+  var inferred = parseAgentColumns(labels.join(', '));
+  inferred.autoColumns = false;
+  inferred.inferredColumns = true;
+  inferred.columnInstructions = parsedColumns.columnInstructions || '';
+  return inferred;
 }
 
 /**
@@ -1109,7 +1208,7 @@ function buildAgentTableOutputSchema(columns, rowLimit) {
             properties: {
               cells: {
                 type: 'array',
-                description: 'Cell values for this row, in the exact same order as the columns array.',
+                description: 'Cell values for this row, in the exact same order as the columns array. If a generated column is an email or phone column, return a valid email address or phone number only when it is publicly source-verifiable.',
                 minItems: 1,
                 items: { type: 'string' }
               }
@@ -1125,17 +1224,19 @@ function buildAgentTableOutputSchema(columns, rowLimit) {
 
   columns.forEach(function(column) {
     required.push(column.key);
+    var format = getAgentFieldFormat(column);
     if (column.type === 'array') {
       properties[column.key] = {
         type: 'array',
         description: 'Values for the "' + column.label + '" column.',
-        items: { type: 'string' }
+        items: applyAgentFormatToStringSchema({ type: 'string' }, format)
       };
     } else {
       properties[column.key] = {
-        type: 'string',
+        type: isAgentContactFormat(format) ? ['string', 'null'] : 'string',
         description: 'Value for the "' + column.label + '" column.'
       };
+      applyAgentFormatToStringSchema(properties[column.key], format);
     }
   });
 
@@ -1179,6 +1280,10 @@ function buildAgentTablePrompt(prompt, columns, rowLimit, columnInstructions) {
     'Try to fill the table as completely as public sources allow, but use empty strings for unknown values rather than inventing facts. ' +
     'Prefer official, primary, or otherwise high-quality sources when possible. ' +
     'Do not return notes, summaries, metadata, or separate partial-results arrays unless the user explicitly asks for them.';
+  var contactGuidance = buildAgentContactGuidance(prompt, columns, columnInstructions);
+  if (contactGuidance) {
+    basePrompt += ' ' + contactGuidance;
+  }
 
   if (!columns || columns.length === 0) {
     var columnGuidance = columnInstructions
@@ -1268,6 +1373,7 @@ function startAgentTableRun(config) {
   if (!parsedColumns.success) {
     return parsedColumns;
   }
+  parsedColumns = inferAgentColumnsFromPrompt(prompt, parsedColumns);
 
   var columns = parsedColumns.columns;
   var autoColumns = parsedColumns.autoColumns === true;
@@ -1295,6 +1401,7 @@ function startAgentTableRun(config) {
       rowLimit: String(rowLimit),
       columns: columns.map(function(column) { return column.key; }).join(','),
       autoColumns: String(autoColumns),
+      inferredColumns: String(parsedColumns.inferredColumns === true),
       columnInstructions: parsedColumns.columnInstructions || '',
       startCell: startCell
     }
@@ -1979,6 +2086,7 @@ function buildAgentFillPrompt(job, instructions) {
   var guidance = instructions
     ? '\nUser guidance: ' + instructions
     : '';
+  var contactGuidance = buildAgentContactGuidance(instructions, job.fields || [], '');
 
   return [
     'Fill selected blank cells in a Google Sheets table.',
@@ -1988,6 +2096,7 @@ function buildAgentFillPrompt(job, instructions) {
     'Keep values short, clean, and spreadsheet-ready.',
     'Return null when a value cannot be verified from reliable public sources.',
     'Do not invent values. Do not return notes, citations, sources, markdown, or extra fields.',
+    contactGuidance,
     '',
     'Target fields:',
     fieldLines,
@@ -2012,6 +2121,7 @@ function buildAgentContinueTablePrompt(job, instructions) {
   var guidance = instructions
     ? '\nUser guidance: ' + instructions
     : '';
+  var contactGuidance = buildAgentContactGuidance(instructions, job.fields || [], '');
 
   return [
     'Continue the existing Google Sheets table into the selected blank rows.',
@@ -2025,6 +2135,7 @@ function buildAgentContinueTablePrompt(job, instructions) {
     'Keep values short, clean, and spreadsheet-ready.',
     'Return null when a value cannot be verified from reliable public sources.',
     'Do not invent values. Do not return notes, citations, sources, markdown, or extra fields.',
+    contactGuidance,
     '',
     'Target fields:',
     fieldLines,
@@ -2071,16 +2182,24 @@ function buildAgentFillOutputSchema(job) {
   var requiredFields = [];
   (job.fields || []).forEach(function(field) {
     requiredFields.push(field.fieldId);
-    properties[field.fieldId] = {
-      anyOf: [
-        { type: 'string' },
-        { type: 'number' },
-        { type: 'boolean' },
-        { type: 'array', items: { type: 'string' } },
-        { type: 'null' }
-      ],
-      description: 'Value for ' + field.title + '. Return null if unavailable.'
-    };
+    var format = getAgentFieldFormat(field);
+    if (isAgentContactFormat(format)) {
+      properties[field.fieldId] = applyAgentFormatToStringSchema({
+        type: ['string', 'null'],
+        description: 'Value for ' + field.title + '. Return null if unavailable.'
+      }, format);
+    } else {
+      properties[field.fieldId] = {
+        anyOf: [
+          applyAgentFormatToStringSchema({ type: 'string' }, format),
+          { type: 'number' },
+          { type: 'boolean' },
+          { type: 'array', items: applyAgentFormatToStringSchema({ type: 'string' }, format) },
+          { type: 'null' }
+        ],
+        description: 'Value for ' + field.title + '. Return null if unavailable.'
+      };
+    }
   });
   var valuesSchema = {
     type: 'object',

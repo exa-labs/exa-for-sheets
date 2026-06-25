@@ -897,6 +897,21 @@ describe('Agent Table', () => {
     expect(result.columns[3].type).toBe('array');
   });
 
+  test('parseAgentColumns should annotate contact and URL column formats', () => {
+    const result = parseAgentColumns('Company Email, Phone Number, Website URL, Source URLs, E-mail, Phone #, URL(s)');
+
+    expect(result.success).toBe(true);
+    expect(result.columns.map(column => column.format)).toEqual([
+      'email',
+      'phone',
+      'uri',
+      'uri',
+      'email',
+      'phone',
+      'uri'
+    ]);
+  });
+
   test('parseAgentColumns should allow blank columns for auto mode', () => {
     const result = parseAgentColumns('');
 
@@ -935,6 +950,18 @@ describe('Agent Table', () => {
     expect(schema.properties.rows.maxItems).toBe(10);
     expect(schema.properties.rows.items.required).toEqual(['name', 'website_url']);
     expect(schema.properties.rows.items.properties.website_url.type).toBe('string');
+  });
+
+  test('buildAgentTableOutputSchema should use email and phone formats for contact fields', () => {
+    const columns = parseAgentColumns('Company Email, Phone Number, Source URLs').columns;
+    const schema = buildAgentTableOutputSchema(columns, 10);
+    const properties = schema.properties.rows.items.properties;
+
+    expect(properties.company_email.format).toBe('email');
+    expect(properties.company_email.type).toEqual(['string', 'null']);
+    expect(properties.phone_number.format).toBe('phone');
+    expect(properties.phone_number.type).toEqual(['string', 'null']);
+    expect(properties.source_urls.items.format).toBe('uri');
   });
 
   test('buildAgentTableOutputSchema should create auto-column schema when no columns are supplied', () => {
@@ -1015,10 +1042,112 @@ describe('Agent Table', () => {
     expect(payload.query).toContain('Every row must be a real, source-verifiable entity');
     expect(payload.query).toContain('Try to fill the table as completely as public sources allow');
     expect(payload.query).toContain('Do not return notes, summaries, metadata');
+    expect(payload.query).not.toContain('explicitly perform contact enrichment');
     expect(payload.query).toContain('Infer the best concise column headers');
     expect(payload.metadata.startCell).toBe('L14');
 
     SpreadsheetApp.getActiveSheet = originalGetActiveSheet;
+  });
+
+  test('startAgentTableRun should add contact enrichment guidance and formats', () => {
+    UrlFetchApp.fetch.mockReturnValue({
+      getResponseCode: () => 200,
+      getContentText: () => JSON.stringify({
+        id: 'agent_run_test',
+        object: 'agent_run',
+        status: 'running',
+        output: { text: '', structured: null, grounding: [] },
+        usage: { searches: 0 },
+        costDollars: { total: 0 }
+      })
+    });
+
+    const result = startAgentTableRun({
+      prompt: 'Find 5 HVAC companies in Austin and include official emails and phone numbers',
+      columns: 'Company Name, Website URL, Email, Phone Number',
+      effort: 'auto'
+    });
+
+    expect(result.success).toBe(true);
+    const payload = JSON.parse(UrlFetchApp.fetch.mock.calls[0][1].payload);
+    const properties = payload.outputSchema.properties.rows.items.properties;
+
+    expect(payload.query).toContain('explicitly perform contact enrichment');
+    expect(payload.query).toContain('Do not guess email patterns');
+    expect(properties.email.format).toBe('email');
+    expect(properties.email.type).toEqual(['string', 'null']);
+    expect(properties.phone_number.format).toBe('phone');
+    expect(properties.phone_number.type).toEqual(['string', 'null']);
+    expect(properties.website_url.format).toBe('uri');
+  });
+
+  test('startAgentTableRun should infer contact columns when columns are blank', () => {
+    UrlFetchApp.fetch.mockReturnValue({
+      getResponseCode: () => 200,
+      getContentText: () => JSON.stringify({
+        id: 'agent_run_test',
+        object: 'agent_run',
+        status: 'running',
+        output: { text: '', structured: null, grounding: [] },
+        usage: { searches: 0 },
+        costDollars: { total: 0 }
+      })
+    });
+
+    const result = startAgentTableRun({
+      prompt: 'Find 10 HVAC companies in Austin with emails and phone numbers',
+      columns: '',
+      effort: 'auto'
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.tableConfig.autoColumns).toBe(false);
+    expect(result.tableConfig.columns.map(column => column.key)).toEqual([
+      'name',
+      'website_url',
+      'contact_email',
+      'phone_number'
+    ]);
+
+    const payload = JSON.parse(UrlFetchApp.fetch.mock.calls[0][1].payload);
+    const properties = payload.outputSchema.properties.rows.items.properties;
+    expect(payload.outputSchema.required).toEqual(['rows']);
+    expect(payload.metadata.autoColumns).toBe('false');
+    expect(payload.metadata.inferredColumns).toBe('true');
+    expect(payload.query).toContain('Populate exactly these columns');
+    expect(properties.contact_email.format).toBe('email');
+    expect(properties.contact_email.type).toEqual(['string', 'null']);
+    expect(properties.phone_number.format).toBe('phone');
+    expect(properties.phone_number.type).toEqual(['string', 'null']);
+  });
+
+  test('startAgentTableRun should keep blank non-contact prompts in auto-column mode', () => {
+    UrlFetchApp.fetch.mockReturnValue({
+      getResponseCode: () => 200,
+      getContentText: () => JSON.stringify({
+        id: 'agent_run_test',
+        object: 'agent_run',
+        status: 'running',
+        output: { text: '', structured: null, grounding: [] },
+        usage: { searches: 0 },
+        costDollars: { total: 0 }
+      })
+    });
+
+    const result = startAgentTableRun({
+      prompt: 'Find 10 AI companies and include founding date',
+      columns: '',
+      effort: 'auto'
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.tableConfig.autoColumns).toBe(true);
+
+    const payload = JSON.parse(UrlFetchApp.fetch.mock.calls[0][1].payload);
+    expect(payload.outputSchema.required).toEqual(['columns', 'rows']);
+    expect(payload.metadata.autoColumns).toBe('true');
+    expect(payload.metadata.inferredColumns).toBe('false');
+    expect(payload.query).toContain('Infer the best concise column headers');
   });
 
   test('startAgentTableRun should use custom start cell when provided', () => {
@@ -1793,6 +1922,51 @@ describe('Agent Fill Cells', () => {
     expect(payload.outputSchema.properties.rows.items.properties.values.required).toBeUndefined();
     expect(payload.metadata.targetCells).toBe('1');
     expect(payload.metadata.overwrite).toBe('false');
+  });
+
+  test('startAgentFillRun should add contact formats and enrichment guidance', () => {
+    const job = {
+      jobId: 'fill_1',
+      overwrite: false,
+      fields: [
+        { fieldId: 'email', title: 'Email', column: 3, columnLetter: 'C' },
+        { fieldId: 'phone_number', title: 'Phone Number', column: 4, columnLetter: 'D' },
+        { fieldId: 'website_url', title: 'Website URL', column: 5, columnLetter: 'E' }
+      ],
+      targets: [
+        { cell: 'C2', row: 2, column: 3, rowId: 'row_2', fieldId: 'email', title: 'Email', columnLetter: 'C' },
+        { cell: 'D2', row: 2, column: 4, rowId: 'row_2', fieldId: 'phone_number', title: 'Phone Number', columnLetter: 'D' },
+        { cell: 'E2', row: 2, column: 5, rowId: 'row_2', fieldId: 'website_url', title: 'Website URL', columnLetter: 'E' }
+      ],
+      inputRows: [{ rowId: 'row_2', rowNumber: 2, cells: [{ fieldId: 'company_name', title: 'Company Name', column: 'A', value: 'Acme HVAC' }] }],
+      targetRowIds: ['row_2']
+    };
+    UrlFetchApp.fetch.mockReturnValue({
+      getResponseCode: () => 200,
+      getContentText: () => JSON.stringify({
+        id: 'agent_run_fill',
+        status: 'running',
+        output: { structured: null },
+        usage: { searches: 0 },
+        costDollars: { total: 0 }
+      })
+    });
+
+    const result = startAgentFillRun(job, { effort: 'auto', instructions: '' });
+
+    expect(result.success).toBe(true);
+    const payload = JSON.parse(UrlFetchApp.fetch.mock.calls[0][1].payload);
+    const valueProperties = payload.outputSchema.properties.rows.items.properties.values.properties;
+
+    expect(payload.query).toContain('explicitly perform contact enrichment');
+    expect(valueProperties.email.type).toEqual(['string', 'null']);
+    expect(valueProperties.email.format).toBe('email');
+    expect(valueProperties.email.anyOf).toBeUndefined();
+    expect(valueProperties.phone_number.type).toEqual(['string', 'null']);
+    expect(valueProperties.phone_number.format).toBe('phone');
+    expect(valueProperties.phone_number.anyOf).toBeUndefined();
+    expect(valueProperties.website_url.anyOf[0].format).toBe('uri');
+    expect(valueProperties.website_url.anyOf[3].items.format).toBe('uri');
   });
 
   test('startAgentFillRun should create a continuation Agent run for blank rows below a table', () => {
