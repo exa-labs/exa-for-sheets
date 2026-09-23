@@ -63,10 +63,11 @@ Use **For each row** to generate multiple destination rows from each source row,
 
 1. Put source records in one sheet, with headers in row 1 and a unique identifier in the first column. For example, a `Company` column.
 2. Create a different destination sheet with headers in row 1. Include a column with the same header as the source identifier, such as `Company`; the other destination headers define the fields to find.
-3. From the source sheet, open **Exa Agent**, choose **For each row** from the Task menu, enter one prompt, and choose the destination sheet. Run all non-empty source rows, or choose **Only selected rows** to process a subset.
-4. Click **Run for each row** to start one paid Agent request per source row. The sidebar shows the request count and progress; keep it open until the batch completes.
+3. Select the source data rows to process. You can select any column in those rows; the add-on reads the full row and skips the header row.
+4. From the source sheet, open **Exa Agent**, choose **For each row** from the Task menu, enter one prompt, and choose the destination sheet.
+5. Click **Run for each row** to start one paid Agent request per selected row with a value in the first column. The sidebar shows the request count and progress; keep it open until the batch completes.
 
-The add-on sends each source row as `input.data`, with up to 50 Agent runs active at once. It limits simultaneous Sheets-to-Apps-Script calls to eight while starting, polling, and writing those runs. Existing destination rows with the same source identifier go into `input.exclusion`. Every result must repeat the source identifier, and non-duplicate results append to the destination. Each batch is limited to 50 source rows; run another batch for larger tables. Exa API rate limits may still slow or reject a large batch.
+The add-on sends each selected source row as `input.data`, with up to 50 Agent runs active at once. It limits simultaneous Sheets-to-Apps-Script calls to eight while starting, polling, and writing those runs. Existing destination rows with the same source identifier go into `input.exclusion`. Every result must repeat the source identifier, and non-duplicate results append to the destination. Each selection is limited to 50 source rows; select another batch for larger tables. Exa API rate limits may still slow or reject a large batch.
 
 ### Fill Cells
 

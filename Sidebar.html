@@ -761,16 +761,10 @@
 
       <div id="agentForEachPanel" class="agent-panel" hidden>
         <div class="key-section">
-          <div class="small-help">One paid Agent run per row. Column A identifies each source row.</div>
+          <div class="small-help">Select rows in the sheet first. Each selected data row starts one paid Agent run; column A identifies the row.</div>
 
           <label for="agentForEachPrompt">Prompt</label>
           <textarea id="agentForEachPrompt" placeholder="Find up to 3 relevant leaders for this company. Verify their current roles and profile URLs."></textarea>
-
-          <label for="agentForEachScope">Source rows</label>
-          <select id="agentForEachScope">
-            <option value="all" selected>All rows</option>
-            <option value="selected">Selected rows</option>
-          </select>
 
           <div class="field-heading">
             <label for="agentForEachDestination">Write results to</label>
@@ -796,7 +790,7 @@
             <button id="agentForEachCancelButton" class="warning-button" onclick="cancelAgentForEach()" style="display: none;">Cancel</button>
           </div>
         </div>
-        <div id="agentForEachStatus" class="status-display">Choose a destination and enter a prompt.</div>
+        <div id="agentForEachStatus" class="status-display">Select rows, choose a destination, and enter a prompt.</div>
         <div id="agentForEachMeta" class="agent-meta"></div>
       </div>
 
@@ -1503,7 +1497,6 @@
       function runAgentForEach() {
         const config = {
           prompt: document.getElementById('agentForEachPrompt').value.trim(),
-          scope: document.getElementById('agentForEachScope').value,
           destinationSheetId: document.getElementById('agentForEachDestination').value,
           effort: document.getElementById('agentForEachEffort').value
         };
@@ -1523,7 +1516,7 @@
         agentForEachCancelled = false;
         agentForEachConfig = config;
         setAgentForEachBusy(true);
-        setAgentForEachStatus('Preparing source rows...');
+        setAgentForEachStatus('Preparing selected rows...');
         google.script.run
           .withSuccessHandler(() => {
             if (generation !== agentForEachGeneration) return;

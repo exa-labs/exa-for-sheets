@@ -1909,7 +1909,7 @@ describe('For Each Row', () => {
     }
   });
 
-  function setSheets(sourceData, destinationData, selection = 'A1:A1') {
+  function setSheets(sourceData, destinationData, selection = 'A2:A3') {
     const source = createMockSheet(sourceData, selection, [], { name: 'Source', sheetId: 11 });
     const destination = createMockSheet(destinationData, 'A1', [], { name: 'Results', sheetId: 22 });
     SpreadsheetApp.getActiveSheet = jest.fn(() => source.sheet);
@@ -1927,7 +1927,7 @@ describe('For Each Row', () => {
       ['Contoso Works', 'contoso.example']
     ], [['Company', 'Name', 'Profile URL']]);
 
-    const result = prepareAgentForEachJobs({ prompt: 'Find 3 leaders', destinationSheetId: 22, scope: 'all' });
+    const result = prepareAgentForEachJobs({ prompt: 'Find 3 leaders', destinationSheetId: 22 });
 
     expect(result.success).toBe(true);
     expect(result.jobs).toHaveLength(2);
@@ -1946,7 +1946,7 @@ describe('For Each Row', () => {
       ['Contoso Works', 'contoso.example']
     ], [['Company', 'Name']], 'B3');
 
-    const result = prepareAgentForEachJobs({ prompt: 'Find leaders', destinationSheetId: 22, scope: 'selected' });
+    const result = prepareAgentForEachJobs({ prompt: 'Find leaders', destinationSheetId: 22, scope: 'all' });
 
     expect(result.success).toBe(true);
     expect(result.jobs).toHaveLength(1);
@@ -1954,10 +1954,40 @@ describe('For Each Row', () => {
     expect(result.jobs[0].sourceValue).toBe('Contoso Works');
   });
 
+  test('requires selected data rows instead of defaulting to all rows', () => {
+    const { source } = setSheets(
+      [['Company'], ['Northwind Labs'], ['Contoso Works']],
+      [['Company', 'Name']],
+      'A1'
+    );
+
+    const headerOnly = prepareAgentForEachJobs({ prompt: 'Find leaders', destinationSheetId: 22 });
+    expect(headerOnly.success).toBe(false);
+    expect(headerOnly.message).toContain('Select one or more source data rows');
+    expect(UrlFetchApp.fetch).not.toHaveBeenCalled();
+
+    source.sheet.getActiveRange = jest.fn(() => null);
+    const noSelection = prepareAgentForEachJobs({ prompt: 'Find leaders', destinationSheetId: 22 });
+    expect(noSelection.success).toBe(false);
+    expect(noSelection.message).toContain('Select one or more source data rows');
+  });
+
+  test('skips the header when it is included in the selected range', () => {
+    setSheets(
+      [['Company'], ['Northwind Labs'], ['Contoso Works']],
+      [['Company', 'Name']],
+      'A1:A2'
+    );
+
+    const result = prepareAgentForEachJobs({ prompt: 'Find leaders', destinationSheetId: 22 });
+    expect(result.success).toBe(true);
+    expect(result.jobs.map(job => job.sourceValue)).toEqual(['Northwind Labs']);
+  });
+
   test('requires the destination to repeat the first source column', () => {
     setSheets([['Company'], ['Northwind Labs']], [['Name', 'Profile URL']]);
 
-    const result = prepareAgentForEachJobs({ prompt: 'Find leaders', destinationSheetId: 22, scope: 'all' });
+    const result = prepareAgentForEachJobs({ prompt: 'Find leaders', destinationSheetId: 22 });
 
     expect(result.success).toBe(false);
     expect(result.message).toContain('Company');
@@ -1966,7 +1996,7 @@ describe('For Each Row', () => {
   test('rejects duplicate source identifiers before making paid calls', () => {
     setSheets([['Company'], ['Northwind Labs'], ['northwind labs']], [['Company', 'Name']]);
 
-    const result = prepareAgentForEachJobs({ prompt: 'Find leaders', destinationSheetId: 22, scope: 'all' });
+    const result = prepareAgentForEachJobs({ prompt: 'Find leaders', destinationSheetId: 22 });
 
     expect(result.success).toBe(false);
     expect(result.message).toContain('Duplicate value');
@@ -1980,7 +2010,7 @@ describe('For Each Row', () => {
       ['Company', 'Name', 'Profile URL'],
       ['Northwind Labs', 'Avery Chen', 'https://example.com/avery']
     ]);
-    const job = prepareAgentForEachJobs({ prompt: 'Find 3 leaders', destinationSheetId: 22, scope: 'all' }).jobs[0];
+    const job = prepareAgentForEachJobs({ prompt: 'Find 3 leaders', destinationSheetId: 22 }).jobs[0];
     UrlFetchApp.fetch.mockReturnValue({
       getResponseCode: () => 200,
       getContentText: () => JSON.stringify({ id: 'agent_run_each', status: 'queued' })
@@ -2002,7 +2032,7 @@ describe('For Each Row', () => {
   test('accepts unchanged headers when column object properties arrive in a different order', () => {
     const { destination } = setSheets([['Company'], ['Northwind Labs']], [['Company', 'Name']]);
     const job = prepareAgentForEachJobs({
-      prompt: 'Find leaders', destinationSheetId: 22, scope: 'all'
+      prompt: 'Find leaders', destinationSheetId: 22
     }).jobs[0];
     job.columns = job.columns.map(column => ({
       format: column.format, type: column.type, label: column.label, key: column.key
@@ -2023,7 +2053,7 @@ describe('For Each Row', () => {
   test('still rejects a real destination header change before a paid call', () => {
     const { destination } = setSheets([['Company'], ['Northwind Labs']], [['Company', 'Name']]);
     const job = prepareAgentForEachJobs({
-      prompt: 'Find leaders', destinationSheetId: 22, scope: 'all'
+      prompt: 'Find leaders', destinationSheetId: 22
     }).jobs[0];
     destination.data[0][1] = 'Role';
 

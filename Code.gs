@@ -1622,15 +1622,11 @@ function prepareAgentForEachJobs(config) {
     return { success: false, message: 'The destination needs a "' + sourceKey.label + '" column to link each result to its source row.' };
   }
 
-  var startRow = 2;
-  var endRow = source.getLastRow();
-  if (config.scope === 'selected') {
-    var selection = source.getActiveRange();
-    if (!selection) return { success: false, message: 'Select one or more source rows first.' };
-    startRow = Math.max(2, selection.getRow());
-    endRow = Math.min(endRow, selection.getRow() + selection.getNumRows() - 1);
-  }
-  if (endRow < startRow) return { success: false, message: 'No source data rows were found.' };
+  var selection = source.getActiveRange();
+  if (!selection) return { success: false, message: 'Select one or more source data rows first.' };
+  var startRow = Math.max(2, selection.getRow());
+  var endRow = Math.min(source.getLastRow(), selection.getRow() + selection.getNumRows() - 1);
+  if (endRow < startRow) return { success: false, message: 'Select one or more source data rows first.' };
   if (endRow - startRow + 1 > EXA_AGENT_CONFIG.maxForEachRows) {
     return { success: false, message: 'Run at most ' + EXA_AGENT_CONFIG.maxForEachRows + ' source rows at a time.' };
   }

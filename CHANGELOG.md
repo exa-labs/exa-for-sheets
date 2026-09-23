@@ -15,6 +15,7 @@ All notable changes to Exa for Google Sheets will be documented in this file.
 - Simplify the Agent sidebar to one task selector and one primary action, and prevent text overflow in narrow sidebars.
 - Keep the sidebar tabs fully visible while the active panel scrolls.
 - Start per-row Agent runs directly from the Run button without a second confirmation dialog.
+- Run per-row Agent only for selected source data rows.
 - Compare per-row destination headers by their visible labels so equivalent column objects survive sidebar round trips.
 - Require every selected Agent Fill field while still allowing `null` when research cannot verify a value.
 - Preserve Agent grounding and use it only as a fallback for explicit source or citation columns.

@@ -13,7 +13,7 @@ function createSidebarHarness() {
     withSuccessHandler(onSuccess) {
       return { withFailureHandler: onFailure => ({
         ensureAuthorized: () => pendingCalls.push({ method: 'authorize', onSuccess, onFailure }),
-        prepareAgentForEachJobs: () => pendingCalls.push({ method: 'prepare', onSuccess, onFailure }),
+        prepareAgentForEachJobs: config => pendingCalls.push({ method: 'prepare', config, onSuccess, onFailure }),
         startAgentForEachRun: (job) => pendingCalls.push({ method: 'start', job, onSuccess, onFailure }),
         getAgentRunStatus: () => pendingCalls.push({ method: 'poll', onSuccess, onFailure }),
         writeAgentForEachRunToSheet: () => pendingCalls.push({ method: 'write', onSuccess, onFailure }),
@@ -53,7 +53,6 @@ function createSidebarHarness() {
 test('clicking Run starts prepared per-row Agent calls without a second confirmation', () => {
   const { context, pendingCalls, elements, confirm } = createSidebarHarness();
   elements.agentForEachPrompt = { value: 'Find relevant people' };
-  elements.agentForEachScope = { value: 'selected' };
   elements.agentForEachDestination = { value: '22' };
   elements.agentForEachEffort = { value: 'auto' };
 
@@ -63,12 +62,14 @@ test('clicking Run starts prepared per-row Agent calls without a second confirma
   authorization.onSuccess();
   const preparation = pendingCalls.shift();
   expect(preparation.method).toBe('prepare');
+  expect(preparation.config).not.toHaveProperty('scope');
   preparation.onSuccess({ success: true, jobs: [
     { sourceRow: 2, sourceValue: 'First' },
     { sourceRow: 3, sourceValue: 'Second' }
   ] });
 
   expect(confirm).not.toHaveBeenCalled();
+  expect(elements.agentForEachScope).toBeUndefined();
   expect(pendingCalls.map(call => call.method)).toEqual(['start', 'start']);
   expect(elements.agentForEachStatus.textContent).toBe('Starting 2 Agent run(s)...');
 });
