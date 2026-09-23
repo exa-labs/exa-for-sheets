@@ -12,14 +12,16 @@
         box-sizing: border-box;
         display: flex;
         flex-direction: column; /* Stack tabs and content vertically */
+        min-width: 0;
       }
 
 
       .tab-container {
-        display: flex;
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
         border-bottom: 1px solid #D1D5DB;
         padding: 0 10px;
-        overflow-x: auto;
+        flex: 0 0 auto;
       }
 
 
@@ -38,6 +40,8 @@
         padding: 20px 15px; /* Padding for content areas */
         flex-grow: 1; /* Allow content to fill remaining space */
         overflow-y: auto; /* Add scroll if content overflows */
+        min-height: 0;
+        min-width: 0;
        }
 
        /* Hide inactive tab content */
@@ -93,10 +97,13 @@
         margin-top: 5px; /* Space above buttons */
         font-family: sans-serif;
         letter-spacing: 0.3px; /* Slightly improve button text readability */
+        max-width: 100%;
+        overflow-wrap: anywhere;
+        line-height: 1.35;
       }
       
       .tab-button {
-        padding: 12px 11px;
+        padding: 12px 4px;
         cursor: pointer;
         border: none;
         background-color: transparent;
@@ -105,10 +112,10 @@
         font-size: 0.9em;
         transition: color 0.2s ease;
         border-bottom: 2px solid transparent;
-        margin-bottom: -1px;
+        margin: 0;
         border-radius: 0;
-        white-space: nowrap;
-        flex: 0 0 auto;
+        min-width: 0;
+        white-space: normal;
       }
        button:disabled {
         background-color: #9CA3AF; /* Grey out when disabled */
@@ -188,7 +195,7 @@
 
       .form-row {
         display: grid;
-        grid-template-columns: 1fr 1fr;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 12px;
       }
 
@@ -214,33 +221,12 @@
         width: 100%;
       }
 
-      .mode-switch {
-        background-color: #F3F4F6;
-        border: 1px solid #E5E7EB;
-        border-radius: 8px;
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 4px;
+      .task-picker {
         margin-bottom: 16px;
-        padding: 4px;
       }
 
-      .mode-button {
-        background-color: transparent;
-        border-radius: 6px;
-        color: #4B5563;
-        margin-top: 0;
-        padding: 8px 10px;
-      }
-
-      .mode-button.active {
-        background-color: #FFFFFF;
-        color: #111827;
-        box-shadow: 0 1px 2px rgba(17, 24, 39, 0.08);
-      }
-
-      .mode-button:hover {
-        background-color: #FFFFFF;
+      .task-picker select {
+        margin-bottom: 0;
       }
 
       .agent-panel[hidden] {
@@ -318,12 +304,41 @@
         margin: -8px 0 12px 0;
       }
 
+      .action-help {
+        margin: 10px 0 0;
+      }
+
+      .link-button {
+        background: none;
+        color: #1F40ED;
+        font-size: 0.8em;
+        margin: 0;
+        padding: 0;
+        text-align: left;
+        text-decoration: underline;
+      }
+
+      .link-button:hover {
+        color: #1833C0;
+      }
+
+      .field-heading {
+        align-items: baseline;
+        display: flex;
+        gap: 8px;
+        justify-content: space-between;
+      }
+
+      .field-heading label {
+        margin-bottom: 5px;
+      }
+
       .agent-meta {
         margin-top: 10px;
         color: #4B5563;
         font-size: 0.8em;
         line-height: 1.4;
-        word-wrap: break-word;
+        overflow-wrap: anywhere;
       }
       
       .status-display {
@@ -333,7 +348,7 @@
         border: 1px solid #E5E7EB;
         font-size: 0.9em;
         min-height: 1.2em;
-        word-wrap: break-word;
+        overflow-wrap: anywhere;
         font-family: sans-serif;
       }
 
@@ -344,6 +359,7 @@
         border-radius: 8px;
         padding: 15px;
         margin-bottom: 20px;
+        min-width: 0;
       }
 
       .key-section h4 {
@@ -664,7 +680,7 @@
           <div class="doc-section">
             <h4>Exa Agent</h4>
             <p>Use this when you want Exa to generate a full table or fill blanks in an existing table.</p>
-            <p>To generate a table, open Exa Agent, write what table you want, then click <strong>Generate table</strong>. The table starts at your selected cell unless you choose another cell in More options.</p>
+            <p>To generate a table, open Exa Agent, write what table you want, then click <strong>Generate table</strong>. You can also use a selected table as structured input.</p>
             <p>To fill cells, select the blank cells in your sheet, open <strong>Fill cells</strong>, then click <strong>Fill selected cells</strong>.</p>
             <p>Example: <code>Find top 40 AI companies with website, CEO, founding date, and headquarters.</code></p>
           </div>
@@ -689,9 +705,14 @@
 
     <!-- Agent Table Tab -->
     <div id="agentTab" class="tab-content">
-      <div class="mode-switch">
-        <button id="agentCreateModeButton" class="mode-button active" onclick="setAgentMode('create')">Generate table</button>
-        <button id="agentFillModeButton" class="mode-button" onclick="setAgentMode('fill')">Fill cells</button>
+      <div class="task-picker">
+        <label for="agentModePicker">Task</label>
+        <select id="agentModePicker" onchange="setAgentMode(this.value)">
+          <option value="create">Generate table</option>
+          <option value="find-more">Find more</option>
+          <option value="for-each">For each row</option>
+          <option value="fill">Fill cells</option>
+        </select>
       </div>
 
       <div id="agentCreatePanel" class="agent-panel">
@@ -712,25 +733,65 @@
             </select>
             <div class="small-help">Auto works best for most tables.</div>
 
-            <label for="agentColumns">Columns</label>
-            <input type="text" id="agentColumns" placeholder="company name, website URL, CEO">
-            <div class="small-help">Leave blank and the Agent will choose the columns.</div>
+            <div id="agentColumnsGroup">
+              <label for="agentColumns">Columns</label>
+              <input type="text" id="agentColumns" placeholder="company name, website URL, CEO">
+              <div class="small-help">Leave blank and the Agent will choose the columns.</div>
+            </div>
 
-            <label for="agentStartCell">Write table at</label>
-            <input type="text" id="agentStartCell" placeholder="Selected cell">
-            <div class="small-help">Leave blank to use the selected cell.</div>
+            <div id="agentStartCellGroup">
+              <label for="agentStartCell">Write table at</label>
+              <input type="text" id="agentStartCell" placeholder="Selected cell">
+              <div class="small-help">Leave blank to use the selected cell.</div>
+            </div>
           </details>
 
           <div class="agent-actions">
             <button id="agentRunButton" onclick="runAgentTable()">Generate table</button>
             <button id="agentCancelButton" class="warning-button" onclick="cancelCurrentAgentRun()" style="display: none;">Cancel</button>
           </div>
+          <div id="agentFindMoreHelp" class="small-help action-help" hidden>Select the existing table including its headers. Existing rows are excluded; new rows append below.</div>
         </div>
 
         <div id="agentStatus" class="status-display">
-          Write a prompt, then generate a table.
+          Enter a prompt to get started.
         </div>
         <div id="agentMeta" class="agent-meta"></div>
+      </div>
+
+      <div id="agentForEachPanel" class="agent-panel" hidden>
+        <div class="key-section">
+          <div class="small-help">Select rows in the sheet first. Each selected data row starts one paid Agent run; column A identifies the row.</div>
+
+          <label for="agentForEachPrompt">Prompt</label>
+          <textarea id="agentForEachPrompt" placeholder="Find up to 3 relevant leaders for this company. Verify their current roles and profile URLs."></textarea>
+
+          <div class="field-heading">
+            <label for="agentForEachDestination">Write results to</label>
+            <button class="link-button" type="button" onclick="loadAgentForEachDestinations()">Refresh</button>
+          </div>
+          <select id="agentForEachDestination"></select>
+          <div class="small-help">Destination headers define the output; one must match the first source header.</div>
+
+          <details class="advanced-options">
+            <summary>More options</summary>
+            <label for="agentForEachEffort">Effort</label>
+            <select id="agentForEachEffort">
+              <option value="auto" selected>Auto</option>
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+              <option value="xhigh">Extra high</option>
+            </select>
+          </details>
+
+          <div class="agent-actions">
+            <button id="agentForEachRunButton" onclick="runAgentForEach()">Run for each row</button>
+            <button id="agentForEachCancelButton" class="warning-button" onclick="cancelAgentForEach()" style="display: none;">Cancel</button>
+          </div>
+        </div>
+        <div id="agentForEachStatus" class="status-display">Select rows, choose a destination, and enter a prompt.</div>
+        <div id="agentForEachMeta" class="agent-meta"></div>
       </div>
 
       <div id="agentFillPanel" class="agent-panel" hidden>
@@ -813,8 +874,22 @@
       let agentFillFilledCells = 0;
       let agentFillCancelled = false;
       let agentFillConfig = null;
-      let agentFillProgress = { completedSearches: 0, completedCost: 0 };
+      let agentFillProgress = { completedSearches: 0, completedCost: 0, runIds: [] };
       const AGENT_FILL_CONCURRENCY = 2;
+      let agentForEachQueue = [];
+      let agentForEachActive = {};
+      let agentForEachCompleted = 0;
+      let agentForEachTotal = 0;
+      let agentForEachRows = 0;
+      let agentForEachFailures = [];
+      let agentForEachCancelled = false;
+      let agentForEachConfig = null;
+      let agentForEachCost = 0;
+      let agentForEachGeneration = 0;
+      let agentForEachRpcQueue = [];
+      let agentForEachRpcInFlight = 0;
+      const AGENT_FOR_EACH_CONCURRENCY = 50;
+      const AGENT_FOR_EACH_RPC_CONCURRENCY = 8;
 
       // --- Tab Management ---
       function openTab(evt, tabName) {
@@ -1092,10 +1167,17 @@
       // --- Agent Table Logic ---
       function setAgentMode(mode) {
         const isFill = mode === 'fill';
-        document.getElementById('agentCreatePanel').hidden = isFill;
+        const isForEach = mode === 'for-each';
+        const isFindMore = mode === 'find-more';
+        document.getElementById('agentModePicker').value = mode;
+        document.getElementById('agentCreatePanel').hidden = isFill || isForEach;
+        document.getElementById('agentForEachPanel').hidden = !isForEach;
         document.getElementById('agentFillPanel').hidden = !isFill;
-        document.getElementById('agentCreateModeButton').classList.toggle('active', !isFill);
-        document.getElementById('agentFillModeButton').classList.toggle('active', isFill);
+        document.getElementById('agentRunButton').textContent = isFindMore ? 'Find more' : 'Generate table';
+        document.getElementById('agentFindMoreHelp').hidden = !isFindMore;
+        document.getElementById('agentColumnsGroup').hidden = isFindMore;
+        document.getElementById('agentStartCellGroup').hidden = isFindMore;
+        if (isForEach) loadAgentForEachDestinations();
       }
 
       function getAgentConfigFromForm() {
@@ -1103,7 +1185,8 @@
           prompt: document.getElementById('agentPrompt').value.trim(),
           columns: document.getElementById('agentColumns').value.trim(),
           effort: document.getElementById('agentEffort').value,
-          startCell: document.getElementById('agentStartCell').value.trim()
+          startCell: document.getElementById('agentStartCell').value.trim(),
+          mode: 'create'
         };
       }
 
@@ -1118,6 +1201,7 @@
 
       function setAgentBusy(isBusy) {
         document.getElementById('agentRunButton').disabled = isBusy;
+        document.getElementById('agentModePicker').disabled = isBusy;
         document.getElementById('agentCancelButton').style.display = isBusy && currentAgentRunId ? 'block' : 'none';
       }
 
@@ -1141,6 +1225,7 @@
         }
 
         const pieces = [];
+        if (run.id) pieces.push(`Run: ${run.id}`);
         if (run.status) pieces.push(`Status: ${run.status}`);
         if (run.usage && typeof run.usage.searches === 'number') {
           agentProgress.searches = Math.max(agentProgress.searches || 0, run.usage.searches);
@@ -1160,8 +1245,9 @@
         }
       }
 
-      function runAgentTable() {
+      function runAgentTable(mode) {
         const config = getAgentConfigFromForm();
+        config.mode = (mode || document.getElementById('agentModePicker').value) === 'find-more' ? 'find-more' : 'create';
         if (!config.prompt) {
           setAgentStatus('Please enter an Agent prompt.', 'error');
           return;
@@ -1327,6 +1413,268 @@
         console.error('Agent failure:', error);
       }
 
+      // --- One Agent run per source row ---
+      function setAgentForEachStatus(message, type) {
+        const element = document.getElementById('agentForEachStatus');
+        element.textContent = message;
+        element.classList.toggle('success', type === 'success');
+        element.classList.toggle('error', type === 'error');
+      }
+
+      function setAgentForEachBusy(busy) {
+        document.getElementById('agentForEachRunButton').disabled = busy;
+        document.getElementById('agentModePicker').disabled = busy;
+        document.getElementById('agentForEachCancelButton').style.display = busy ? 'block' : 'none';
+      }
+
+      function loadAgentForEachDestinations() {
+        const picker = document.getElementById('agentForEachDestination');
+        const previous = picker.value;
+        google.script.run
+          .withSuccessHandler(result => {
+            if (!result.success) {
+              setAgentForEachStatus(result.message || 'Could not list sheets.', 'error');
+              return;
+            }
+            picker.innerHTML = '';
+            (result.destinations || []).forEach(sheet => {
+              const option = document.createElement('option');
+              option.value = String(sheet.sheetId);
+              option.textContent = sheet.name;
+              picker.appendChild(option);
+            });
+            const options = Array.from(picker.options);
+            const preferred = options.find(option => option.value === previous) ||
+              options.find(option => option.textContent.toLowerCase() === 'people') ||
+              options.find(option => option.value !== String(result.sourceSheetId)) || options[0];
+            if (preferred) picker.value = preferred.value;
+            if (!options.length) setAgentForEachStatus('Add a destination sheet with headers in row 1.', 'error');
+          })
+          .withFailureHandler(error => setAgentForEachStatus(`Could not list sheets: ${error.message || error}`, 'error'))
+          .getAgentForEachSheetOptions();
+      }
+
+      function updateAgentForEachProgress() {
+        const activeCosts = Object.values(agentForEachActive).reduce((sum, run) => sum + (run.cost || 0), 0);
+        const pieces = [
+          `${agentForEachCompleted}/${agentForEachTotal} source rows complete`,
+          `${agentForEachRows} rows appended`
+        ];
+        if (agentForEachCost + activeCosts > 0) pieces.push(`Cost: $${(agentForEachCost + activeCosts).toFixed(4)}`);
+        if (agentForEachFailures.length) pieces.push(`${agentForEachFailures.length} failed`);
+        document.getElementById('agentForEachMeta').textContent = pieces.join(' · ');
+      }
+
+      // Keep Apps Script bridge calls below the HTML Service concurrency limit.
+      function queueAgentForEachRpc(invoke, onSuccess, onFailure, generation) {
+        agentForEachRpcQueue.push({ invoke, onSuccess, onFailure, generation });
+        pumpAgentForEachRpcQueue();
+      }
+
+      function pumpAgentForEachRpcQueue() {
+        while (agentForEachRpcInFlight < AGENT_FOR_EACH_RPC_CONCURRENCY && agentForEachRpcQueue.length) {
+          const request = agentForEachRpcQueue.shift();
+          if (request.generation !== null && request.generation !== agentForEachGeneration) continue;
+          agentForEachRpcInFlight += 1;
+          const complete = handler => value => {
+            agentForEachRpcInFlight -= 1;
+            try {
+              handler(value);
+            } finally {
+              pumpAgentForEachRpcQueue();
+            }
+          };
+          const succeed = complete(request.onSuccess);
+          const fail = complete(request.onFailure);
+          try {
+            request.invoke(google.script.run.withSuccessHandler(succeed).withFailureHandler(fail));
+          } catch (error) {
+            fail(error);
+          }
+        }
+      }
+
+      function runAgentForEach() {
+        const config = {
+          prompt: document.getElementById('agentForEachPrompt').value.trim(),
+          destinationSheetId: document.getElementById('agentForEachDestination').value,
+          effort: document.getElementById('agentForEachEffort').value
+        };
+        if (!config.prompt || !config.destinationSheetId) {
+          setAgentForEachStatus('Enter a prompt and choose a destination sheet.', 'error');
+          return;
+        }
+        const generation = ++agentForEachGeneration;
+        agentForEachRpcQueue = agentForEachRpcQueue.filter(request => request.generation === null);
+        agentForEachQueue = [];
+        agentForEachActive = {};
+        agentForEachCompleted = 0;
+        agentForEachTotal = 0;
+        agentForEachRows = 0;
+        agentForEachFailures = [];
+        agentForEachCost = 0;
+        agentForEachCancelled = false;
+        agentForEachConfig = config;
+        setAgentForEachBusy(true);
+        setAgentForEachStatus('Preparing selected rows...');
+        google.script.run
+          .withSuccessHandler(() => {
+            if (generation !== agentForEachGeneration) return;
+            google.script.run
+              .withSuccessHandler(result => {
+                if (generation !== agentForEachGeneration) return;
+                if (!result.success) {
+                  setAgentForEachStatus(result.message || 'Could not prepare source rows.', 'error');
+                  setAgentForEachBusy(false);
+                  return;
+                }
+                agentForEachQueue = result.jobs;
+                agentForEachTotal = result.jobs.length;
+                updateAgentForEachProgress();
+                setAgentForEachStatus(`Starting ${result.jobs.length} Agent run(s)...`);
+                startNextAgentForEachJobs();
+              })
+              .withFailureHandler(error => {
+                if (generation !== agentForEachGeneration) return;
+                setAgentForEachStatus(`Preparation failed: ${error.message || error}`, 'error');
+                setAgentForEachBusy(false);
+              })
+              .prepareAgentForEachJobs(config);
+          })
+          .withFailureHandler(error => {
+            if (generation !== agentForEachGeneration) return;
+            setAgentForEachStatus(`Authorization failed: ${error.message || error}`, 'error');
+            setAgentForEachBusy(false);
+          })
+          .ensureAuthorized();
+      }
+
+      function startNextAgentForEachJobs(generation = agentForEachGeneration) {
+        if (agentForEachCancelled || generation !== agentForEachGeneration) return;
+        while (Object.keys(agentForEachActive).length < AGENT_FOR_EACH_CONCURRENCY && agentForEachQueue.length) {
+          const job = agentForEachQueue.shift();
+          const pendingKey = `pending_${job.sourceRow}`;
+          agentForEachActive[pendingKey] = { sourceValue: job.sourceValue, cost: 0, timer: null };
+          queueAgentForEachRpc(runner => runner.startAgentForEachRun(job, agentForEachConfig), result => {
+              if (agentForEachCancelled || generation !== agentForEachGeneration) {
+                if (result.success && result.run && result.run.id) {
+                  queueAgentForEachRpc(runner => runner.cancelAgentRun(result.run.id), () => {}, () => {}, null);
+                }
+                return;
+              }
+              delete agentForEachActive[pendingKey];
+              if (!result.success) {
+                agentForEachCompleted += 1;
+                agentForEachFailures.push(`${job.sourceValue}: ${result.message || 'could not start'}`);
+                updateAgentForEachProgress();
+                startNextAgentForEachJobs(generation);
+                maybeFinishAgentForEach();
+                return;
+              }
+              agentForEachActive[result.run.id] = {
+                sourceValue: job.sourceValue, writeConfig: result.writeConfig, cost: 0, timer: null
+              };
+              pollAgentForEachRun(result.run.id, generation);
+              startNextAgentForEachJobs(generation);
+            }, error => {
+              if (agentForEachCancelled || generation !== agentForEachGeneration) return;
+              delete agentForEachActive[pendingKey];
+              agentForEachCompleted += 1;
+              agentForEachFailures.push(`${job.sourceValue}: ${error.message || error}`);
+              updateAgentForEachProgress();
+              startNextAgentForEachJobs(generation);
+              maybeFinishAgentForEach();
+            }, generation);
+        }
+        maybeFinishAgentForEach();
+      }
+
+      function pollAgentForEachRun(runId, generation = agentForEachGeneration) {
+        if (agentForEachCancelled || generation !== agentForEachGeneration || !agentForEachActive[runId]) return;
+        queueAgentForEachRpc(runner => runner.getAgentRunStatus(runId), result => {
+            const active = agentForEachActive[runId];
+            if (!active || agentForEachCancelled || generation !== agentForEachGeneration) return;
+            if (!result.success) {
+              if (result.retryable) {
+                active.timer = setTimeout(() => pollAgentForEachRun(runId, generation), Math.max(result.retryAfterMs || 10000, 3000));
+              } else {
+                finishAgentForEachRun(runId, result.message || 'poll failed', generation);
+              }
+              return;
+            }
+            if (result.run.costDollars && typeof result.run.costDollars.total === 'number') {
+              active.cost = Math.max(active.cost, result.run.costDollars.total);
+            }
+            updateAgentForEachProgress();
+            if (result.run.status === 'queued' || result.run.status === 'running') {
+              active.timer = setTimeout(() => pollAgentForEachRun(runId, generation), 3000);
+            } else if (result.run.status === 'completed') {
+              writeAgentForEachOutput(runId, generation);
+            } else {
+              finishAgentForEachRun(runId, `Agent ${result.run.status}`, generation);
+            }
+          }, error => finishAgentForEachRun(runId, error.message || String(error), generation), generation);
+      }
+
+      function writeAgentForEachOutput(runId, generation = agentForEachGeneration) {
+        const active = agentForEachActive[runId];
+        if (!active || agentForEachCancelled || generation !== agentForEachGeneration) return;
+        queueAgentForEachRpc(runner => runner.writeAgentForEachRunToSheet(runId, active.writeConfig), result => {
+            if (!agentForEachActive[runId] || agentForEachCancelled || generation !== agentForEachGeneration) return;
+            if (!result.success && result.retryable) {
+              active.timer = setTimeout(() => writeAgentForEachOutput(runId, generation), Math.max(result.retryAfterMs || 10000, 3000));
+              return;
+            }
+            if (!result.success) {
+              finishAgentForEachRun(runId, result.message || 'write failed', generation);
+              return;
+            }
+            agentForEachRows += Number(result.rows) || 0;
+            finishAgentForEachRun(runId, null, generation);
+          }, error => finishAgentForEachRun(runId, error.message || String(error), generation), generation);
+      }
+
+      function finishAgentForEachRun(runId, error, generation = agentForEachGeneration) {
+        const active = agentForEachActive[runId];
+        if (!active || agentForEachCancelled || generation !== agentForEachGeneration) return;
+        if (active.timer) clearTimeout(active.timer);
+        agentForEachCost += active.cost || 0;
+        if (error) agentForEachFailures.push(`${active.sourceValue}: ${error}`);
+        delete agentForEachActive[runId];
+        agentForEachCompleted += 1;
+        updateAgentForEachProgress();
+        startNextAgentForEachJobs(generation);
+        maybeFinishAgentForEach();
+      }
+
+      function maybeFinishAgentForEach() {
+        if (agentForEachCancelled || !agentForEachTotal) return;
+        if (agentForEachCompleted < agentForEachTotal || agentForEachQueue.length || Object.keys(agentForEachActive).length) return;
+        setAgentForEachBusy(false);
+        if (agentForEachFailures.length) {
+          setAgentForEachStatus(`Done with ${agentForEachFailures.length} issue(s): ${agentForEachFailures.slice(0, 3).join('; ')}`, 'error');
+        } else {
+          setAgentForEachStatus(`Done. Appended ${agentForEachRows} row(s).`, 'success');
+        }
+      }
+
+      function cancelAgentForEach() {
+        agentForEachCancelled = true;
+        agentForEachGeneration += 1;
+        agentForEachRpcQueue = agentForEachRpcQueue.filter(request => request.generation === null);
+        agentForEachQueue = [];
+        Object.keys(agentForEachActive).forEach(runId => {
+          const active = agentForEachActive[runId];
+          if (active.timer) clearTimeout(active.timer);
+          if (!runId.startsWith('pending_')) {
+            queueAgentForEachRpc(runner => runner.cancelAgentRun(runId), () => {}, () => {}, null);
+          }
+        });
+        agentForEachActive = {};
+        setAgentForEachBusy(false);
+        setAgentForEachStatus('Cancelled remaining work.', 'error');
+      }
+
       // --- Agent Fill Logic ---
       function getAgentFillConfigFromForm() {
         return {
@@ -1340,6 +1688,7 @@
         const fillButton = document.getElementById('agentFillButton');
         fillButton.disabled = isBusy;
         fillButton.textContent = isBusy ? 'Filling selected cells...' : 'Fill selected cells';
+        document.getElementById('agentModePicker').disabled = isBusy;
         document.getElementById('agentFillCancelButton').style.display = isBusy ? 'block' : 'none';
       }
 
@@ -1389,6 +1738,12 @@
         const pieces = [];
         if (searches > 0) pieces.push(`Searches: ${searches}`);
         if (cost > 0) pieces.push(`Cost: $${cost.toFixed(4)}`);
+        const runIds = agentFillProgress.runIds || [];
+        if (runIds.length === 1) {
+          pieces.push(`Run: ${runIds[0]}`);
+        } else if (runIds.length > 1) {
+          pieces.push(`Runs: ${runIds.length} · Latest: ${runIds[runIds.length - 1]}`);
+        }
         if (pieces.length > 0) {
           setAgentFillMeta(pieces.join(' · '));
         } else if (agentFillTotalJobs > 1) {
@@ -1413,7 +1768,7 @@
         agentFillFilledCells = 0;
         agentFillCancelled = false;
         agentFillConfig = null;
-        agentFillProgress = { completedSearches: 0, completedCost: 0 };
+        agentFillProgress = { completedSearches: 0, completedCost: 0, runIds: [] };
       }
 
       function runAgentFill() {
@@ -1481,6 +1836,9 @@
               }
 
               const runId = result.run.id;
+              if (agentFillProgress.runIds.indexOf(runId) === -1) {
+                agentFillProgress.runIds.push(runId);
+              }
               agentFillActiveRuns[runId] = {
                 fillConfig: result.fillConfig,
                 config: config,
