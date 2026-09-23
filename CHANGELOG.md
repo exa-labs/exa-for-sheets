@@ -2,6 +2,25 @@
 
 All notable changes to Exa for Google Sheets will be documented in this file.
 
+## [Unreleased]
+
+### New Features
+
+- Extend a selected Agent table with Find more, passing existing rows as `input.exclusion` and appending non-duplicate results.
+- Generate destination rows for each source row with separate Agent runs, a shared destination schema, exclusions, and append-only writes.
+- Allow up to 50 active per-row Agent runs while limiting concurrent Apps Script calls to eight.
+
+### Bug Fixes
+
+- Simplify the Agent sidebar to one task selector and one primary action, and prevent text overflow in narrow sidebars.
+- Keep the sidebar tabs fully visible while the active panel scrolls.
+- Start per-row Agent runs directly from the Run button without a second confirmation dialog.
+- Compare per-row destination headers by their visible labels so equivalent column objects survive sidebar round trips.
+- Require every selected Agent Fill field while still allowing `null` when research cannot verify a value.
+- Preserve Agent grounding and use it only as a fallback for explicit source or citation columns.
+- Support source columns that request a single URL, semicolon-separated URLs, Markdown citations, source titles, or JSON.
+- Show Agent run IDs in the sidebar so failed or incomplete runs can be traced.
+
 ## [2.0.3] - 2026-01-23
 
 ### New Features

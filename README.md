@@ -35,7 +35,7 @@ Open the sidebar, then go to **Exa Agent**.
 
 ### Generate Table
 
-Use **Generate table** when you want Exa to create a new table.
+Choose **Generate table** from the Task menu when you want Exa to create a new table.
 
 Example prompt:
 
@@ -46,6 +46,27 @@ Find top 40 AI companies and return company name, website URL, CEO, founding dat
 Exa researches the web and writes the table into your sheet.
 
 By default, the table starts at your selected cell. You can choose another start cell in **More options**.
+
+### Find More
+
+Use **Find more** to extend an existing table without returning rows already listed.
+
+1. Select the entire existing table, including its header row.
+2. Choose **Find more** from the Task menu and enter a prompt describing the additional rows you want, such as `Find five more companies like these`.
+3. Click **Find more**.
+
+The selected rows are sent to Exa Agent as `input.exclusion`. The selected headers define the output columns. New, non-duplicate rows are appended directly below the selection; existing rows are never overwritten. If the append area contains data, the add-on stops instead of writing over it. **Find more** does not use the separate Columns or Write table at options.
+
+### For Each Row
+
+Use **For each row** to generate multiple destination rows from each source row, with a separate Agent run per source row.
+
+1. Put source records in one sheet, with headers in row 1 and a unique identifier in the first column. For example, a `Company` column.
+2. Create a different destination sheet with headers in row 1. Include a column with the same header as the source identifier, such as `Company`; the other destination headers define the fields to find.
+3. From the source sheet, open **Exa Agent**, choose **For each row** from the Task menu, enter one prompt, and choose the destination sheet. Run all non-empty source rows, or choose **Only selected rows** to process a subset.
+4. Click **Run for each row** to start one paid Agent request per source row. The sidebar shows the request count and progress; keep it open until the batch completes.
+
+The add-on sends each source row as `input.data`, with up to 50 Agent runs active at once. It limits simultaneous Sheets-to-Apps-Script calls to eight while starting, polling, and writing those runs. Existing destination rows with the same source identifier go into `input.exclusion`. Every result must repeat the source identifier, and non-duplicate results append to the destination. Each batch is limited to 50 source rows; run another batch for larger tables. Exa API rate limits may still slow or reject a large batch.
 
 ### Fill Cells
 
@@ -59,6 +80,14 @@ Use **Fill cells** when you already have a table and want Exa to fill missing da
 Exa uses the table around your selection as context.
 
 You can also select blank rows under a table. Exa will try to continue the table with new rows that match the same columns.
+
+For citation columns, the header controls how grounding is written:
+
+- `Sources` or `Evidence URLs` returns semicolon-separated URLs.
+- `Primary Source URL` returns one best URL.
+- `Sources (Markdown)` returns titled Markdown links.
+- `Source Titles` returns source titles.
+- `Sources JSON` returns a JSON string with titles and URLs.
 
 ## Formula
 

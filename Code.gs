@@ -8,7 +8,11 @@ var RATE_LIMIT_CONFIG = {
 var EXA_AGENT_CONFIG = {
   endpoint: "https://api.exa.ai/agent/runs",
   betaHeader: "agent-2026-05-07",
-  defaultRows: 50
+  defaultRows: 50,
+  maxExclusionRows: 200,
+  maxExclusionColumns: 50,
+  maxExclusionCells: 5000,
+  maxForEachRows: 50
 };
 
 var EXA_AGENT_VALID_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'auto'];
@@ -1280,6 +1284,7 @@ function buildAgentTablePrompt(prompt, columns, rowLimit, columnInstructions) {
     'Try to fill the table as completely as public sources allow, but use empty strings for unknown values rather than inventing facts. ' +
     'Prefer official, primary, or otherwise high-quality sources when possible. ' +
     'Do not return notes, summaries, metadata, or separate partial-results arrays unless the user explicitly asks for them.';
+
   var contactGuidance = buildAgentContactGuidance(prompt, columns, columnInstructions);
   if (contactGuidance) {
     basePrompt += ' ' + contactGuidance;
@@ -1324,12 +1329,21 @@ function inferAgentRowLimit(prompt, explicitRowLimit) {
     return configured;
   }
 
+  return getAgentRequestedRowCount(prompt) || EXA_AGENT_CONFIG.defaultRows;
+}
+
+/**
+ * Extracts an explicit row count from a table prompt.
+ * @param {string} prompt User prompt
+ * @return {?number} Requested count, or null when none was stated
+ */
+function getAgentRequestedRowCount(prompt) {
   var text = String(prompt || '').toLowerCase();
   var patterns = [
     /\btop\s+(\d+)\b/,
     /\bfirst\s+(\d+)\b/,
-    /\b(\d+)\s+(?:rows?|companies|items|people|startups|leads|results|entries)\b/,
-    /\b(?:return|find|list|give me)\s+(\d+)\b/
+    /\b(?:up to\s+)?(\d+)\s+(?:rows?|companies|items|people|contacts|prospects|startups|leads|results|entries)\b/,
+    /\b(?:return|find|list|give me)\s+(?:up to\s+)?(\d+)\b/
   ];
 
   for (var i = 0; i < patterns.length; i++) {
@@ -1342,7 +1356,68 @@ function inferAgentRowLimit(prompt, explicitRowLimit) {
     }
   }
 
-  return EXA_AGENT_CONFIG.defaultRows;
+  return null;
+}
+
+/**
+ * Converts a selected table into exclusions and fixed output columns.
+ * @param {Range} selection Active range, including a header row
+ * @return {Object} Parsed table or a user-facing validation error
+ */
+function buildAgentTableExclusionsFromSelection(selection) {
+  if (!selection || !selection.getNumRows || !selection.getNumColumns || !selection.getValues) {
+    return { success: false, message: 'Select a range that includes a header row and at least one data row.' };
+  }
+
+  var numRows = selection.getNumRows();
+  var numColumns = selection.getNumColumns();
+  if (numRows < 2) {
+    return { success: false, message: 'Select a range that includes a header row and at least one data row.' };
+  }
+  if (numRows - 1 > EXA_AGENT_CONFIG.maxExclusionRows || numColumns > EXA_AGENT_CONFIG.maxExclusionColumns || numRows * numColumns > EXA_AGENT_CONFIG.maxExclusionCells) {
+    return {
+      success: false,
+      message: 'The selected table is too large. Select no more than ' + EXA_AGENT_CONFIG.maxExclusionRows +
+        ' data rows, ' + EXA_AGENT_CONFIG.maxExclusionColumns + ' columns, and ' + EXA_AGENT_CONFIG.maxExclusionCells + ' total cells.'
+    };
+  }
+
+  var values = selection.getValues();
+  var headerValues = values[0] || [];
+  var usedKeys = {};
+  var columns = [];
+  for (var columnIndex = 0; columnIndex < numColumns; columnIndex++) {
+    var label = String(formatAgentInputCellValue(headerValues[columnIndex]) || '').trim();
+    if (!label) return { success: false, message: 'Every selected column needs a header.' };
+    var key = normalizeAgentColumnKey(label, usedKeys);
+    columns.push({
+      label: label,
+      key: key,
+      type: /(?:^|_)urls$/.test(key) || key === 'sources' ? 'array' : 'string',
+      format: getAgentColumnFormat(label, key)
+    });
+  }
+  var rows = [];
+  for (var rowIndex = 1; rowIndex < values.length; rowIndex++) {
+    var row = {};
+    var hasValue = false;
+    columns.forEach(function(column, index) {
+      var value = formatAgentInputCellValue((values[rowIndex] || [])[index]);
+      row[column.key] = value;
+      if (!isBlankValue(value)) hasValue = true;
+    });
+    if (hasValue) rows.push(row);
+  }
+
+  if (rows.length === 0) return { success: false, message: 'Select at least one existing data row.' };
+
+  return {
+    success: true,
+    rows: rows,
+    columns: columns,
+    range: selection.getA1Notation ? selection.getA1Notation() : '',
+    rowCount: rows.length
+  };
 }
 
 /**
@@ -1367,45 +1442,61 @@ function startAgentTableRun(config) {
     return { success: false, message: 'Please enter an Agent prompt.' };
   }
 
-  var rowLimit = inferAgentRowLimit(prompt, config.rowLimit);
-
-  var parsedColumns = parseAgentColumns(config.columns);
-  if (!parsedColumns.success) {
-    return parsedColumns;
+  var findMore = config.mode === 'find-more';
+  var sheet = SpreadsheetApp.getActiveSheet();
+  var selection = sheet && sheet.getActiveRange ? sheet.getActiveRange() : null;
+  var exclusionTable = findMore ? buildAgentTableExclusionsFromSelection(selection) : null;
+  if (exclusionTable && !exclusionTable.success) return exclusionTable;
+  if (findMore) {
+    var nextRow = selection.getRow() + selection.getNumRows();
+    var lastRow = sheet.getLastRow();
+    if (lastRow >= nextRow && countNonEmptyCells(sheet.getRange(nextRow, selection.getColumn(), 1, selection.getNumColumns()).getValues()) > 0) {
+      return { success: false, message: 'There is data below the selection. Select the full table before running Find more.' };
+    }
   }
-  parsedColumns = inferAgentColumnsFromPrompt(prompt, parsedColumns);
+  var parsedColumns = findMore
+    ? { success: true, columns: exclusionTable.columns, autoColumns: false, columnInstructions: '' }
+    : parseAgentColumns(config.columns);
+  if (!parsedColumns.success) return parsedColumns;
+  if (!findMore) parsedColumns = inferAgentColumnsFromPrompt(prompt, parsedColumns);
 
   var columns = parsedColumns.columns;
   var autoColumns = parsedColumns.autoColumns === true;
   var effort = normalizeAgentEffort(config.effort);
   var requestedStartCell = normalizeAgentStartCell(config.startCell);
-  if (requestedStartCell && !isValidAgentStartCell(requestedStartCell)) {
+  if (!findMore && requestedStartCell && !isValidAgentStartCell(requestedStartCell)) {
     return {
       success: false,
       message: 'Start cell must be a single cell like A1 or D5.'
     };
   }
-  var sheet = SpreadsheetApp.getActiveSheet();
+  var rowLimit = findMore ? Math.min(getAgentRequestedRowCount(prompt) || 10, 100) : inferAgentRowLimit(prompt, config.rowLimit);
   var sheetContext = getAgentSheetContext(sheet);
-  var startCell = requestedStartCell || getCurrentAgentStartCell(sheet);
+  var startCell = findMore ? formatCellA1(selection.getRow() + selection.getNumRows(), selection.getColumn())
+    : (requestedStartCell || getCurrentAgentStartCell(sheet));
   var outputSchema = buildAgentTableOutputSchema(columns, rowLimit);
+  if (findMore) outputSchema.properties.rows.minItems = 0;
 
   var payload = {
-    query: buildAgentTablePrompt(prompt, columns, rowLimit, parsedColumns.columnInstructions || ''),
+    query: buildAgentTablePrompt(prompt, columns, rowLimit, parsedColumns.columnInstructions || '') +
+      (findMore ? ' The selected table rows are in input.exclusion. Find additional entities, not those already listed. Return rows with exactly the same columns as the selected table.' : ''),
     systemPrompt: 'You are filling a Google Sheets table. Return precise, concise cell values and satisfy the provided JSON schema.',
     outputSchema: outputSchema,
     effort: effort,
     metadata: {
       integration: 'exa-for-sheets',
-      mode: 'agent-table',
+      mode: findMore ? 'agent-find-more' : 'agent-table',
       rowLimit: String(rowLimit),
       columns: columns.map(function(column) { return column.key; }).join(','),
       autoColumns: String(autoColumns),
       inferredColumns: String(parsedColumns.inferredColumns === true),
       columnInstructions: parsedColumns.columnInstructions || '',
-      startCell: startCell
+      startCell: startCell,
+      exclusionRange: exclusionTable ? exclusionTable.range : '',
+      exclusionRows: exclusionTable ? String(exclusionTable.rowCount) : '0'
     }
   };
+  if (exclusionTable) payload.input = { exclusion: exclusionTable.rows };
 
   try {
     var response = fetchWithRetry(EXA_AGENT_CONFIG.endpoint, {
@@ -1436,6 +1527,9 @@ function startAgentTableRun(config) {
           rowLimit: rowLimit,
           autoColumns: autoColumns,
           startCell: startCell,
+          mode: findMore ? 'find-more' : 'create',
+          exclusionRange: exclusionTable ? exclusionTable.range : '',
+          exclusionRows: exclusionTable ? exclusionTable.rowCount : 0,
           sheetId: sheetContext.sheetId,
           sheetName: sheetContext.sheetName
         }
@@ -1449,6 +1543,280 @@ function startAgentTableRun(config) {
   } catch (e) {
     Logger.log('startAgentTableRun Error: ' + e);
     return { success: false, message: 'Script Error: ' + e.message };
+  }
+}
+
+/** Lists sheets for the destination picker without sending any cell values. */
+function getAgentForEachSheetOptions() {
+  var spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  var source = SpreadsheetApp.getActiveSheet();
+  return {
+    success: true,
+    sourceSheetId: source.getSheetId(),
+    sourceSheetName: source.getName(),
+    destinations: spreadsheet.getSheets().map(function(sheet) {
+      return { sheetId: sheet.getSheetId(), name: sheet.getName() };
+    })
+  };
+}
+
+/** Reads row-one headers as a fixed Agent output schema. */
+function getAgentForEachColumns(sheet) {
+  var count = sheet.getLastColumn();
+  if (!count || count > EXA_AGENT_CONFIG.maxExclusionColumns) {
+    return { success: false, message: 'Use a header row with 1–' + EXA_AGENT_CONFIG.maxExclusionColumns + ' columns.' };
+  }
+  var headers = sheet.getRange(1, 1, 1, count).getValues()[0];
+  var used = {};
+  var columns = [];
+  for (var i = 0; i < headers.length; i++) {
+    var label = String(formatAgentInputCellValue(headers[i]) || '').trim();
+    if (!label) return { success: false, message: 'Every column in row 1 needs a header.' };
+    var key = normalizeAgentColumnKey(label, used);
+    columns.push({
+      key: key,
+      label: label,
+      type: /(?:^|_)urls$/.test(key) || key === 'sources' ? 'array' : 'string',
+      format: getAgentColumnFormat(label, key)
+    });
+  }
+  return { success: true, columns: columns };
+}
+
+/** Compares sheet headers without depending on object property order across sidebar calls. */
+function haveSameAgentForEachHeaders(expectedColumns, currentColumns) {
+  if (!Array.isArray(expectedColumns) || !Array.isArray(currentColumns) ||
+      expectedColumns.length !== currentColumns.length) return false;
+  return expectedColumns.every(function(column, index) {
+    return column && String(column.label || '').trim() === currentColumns[index].label;
+  });
+}
+
+/** Prepares one job per source row; no paid calls are made here. */
+function prepareAgentForEachJobs(config) {
+  if (!getApiKey()) return { success: false, message: 'No API key set. Please set your API key in the Exa AI sidebar.' };
+  config = config || {};
+  if (!String(config.prompt || '').trim()) return { success: false, message: 'Enter a prompt for each source row.' };
+  var source = SpreadsheetApp.getActiveSheet();
+  var spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  var destination = null;
+  spreadsheet.getSheets().some(function(sheet) {
+    if (String(sheet.getSheetId()) === String(config.destinationSheetId)) {
+      destination = sheet;
+      return true;
+    }
+    return false;
+  });
+  if (!destination || destination.getSheetId() === source.getSheetId()) {
+    return { success: false, message: 'Choose a different destination sheet with headers in row 1.' };
+  }
+  var sourceTable = getAgentForEachColumns(source);
+  if (!sourceTable.success) return sourceTable;
+  var destinationTable = getAgentForEachColumns(destination);
+  if (!destinationTable.success) return destinationTable;
+  var sourceKey = sourceTable.columns[0];
+  if (sourceKey.type !== 'string') {
+    return { success: false, message: 'The first source column must be a single-value identifier.' };
+  }
+  if (!destinationTable.columns.some(function(column) { return column.key === sourceKey.key; })) {
+    return { success: false, message: 'The destination needs a "' + sourceKey.label + '" column to link each result to its source row.' };
+  }
+
+  var startRow = 2;
+  var endRow = source.getLastRow();
+  if (config.scope === 'selected') {
+    var selection = source.getActiveRange();
+    if (!selection) return { success: false, message: 'Select one or more source rows first.' };
+    startRow = Math.max(2, selection.getRow());
+    endRow = Math.min(endRow, selection.getRow() + selection.getNumRows() - 1);
+  }
+  if (endRow < startRow) return { success: false, message: 'No source data rows were found.' };
+  if (endRow - startRow + 1 > EXA_AGENT_CONFIG.maxForEachRows) {
+    return { success: false, message: 'Run at most ' + EXA_AGENT_CONFIG.maxForEachRows + ' source rows at a time.' };
+  }
+  var values = source.getRange(startRow, 1, endRow - startRow + 1, sourceTable.columns.length).getValues();
+  var jobs = [];
+  var seen = {};
+  var duplicateValue = '';
+  values.forEach(function(row, index) {
+    var sourceValue = String(formatAgentInputCellValue(row[0]) || '').trim();
+    if (!sourceValue) return;
+    var normalized = sourceValue.toLowerCase();
+    if (seen[normalized]) {
+      duplicateValue = sourceValue;
+      return;
+    }
+    seen[normalized] = true;
+    var data = { source_row_id: 'row_' + (startRow + index) };
+    sourceTable.columns.forEach(function(column, columnIndex) {
+      data[column.key] = formatAgentInputCellValue(row[columnIndex]);
+    });
+    jobs.push({
+      sourceSheetId: source.getSheetId(),
+      sourceRow: startRow + index,
+      sourceKey: sourceKey.key,
+      sourceValue: sourceValue,
+      data: data,
+      destinationSheetId: destination.getSheetId(),
+      destinationSheetName: destination.getName(),
+      columns: destinationTable.columns
+    });
+  });
+  if (duplicateValue) {
+    return { success: false, message: 'The source identifier must be unique. Duplicate value: ' + duplicateValue };
+  }
+  if (!jobs.length) return { success: false, message: 'No source rows with a value in the first column were found.' };
+  return {
+    success: true,
+    message: 'Ready to run ' + jobs.length + ' Agent request(s).',
+    jobs: jobs,
+    sourceSheetName: source.getName(),
+    destinationSheetName: destination.getName()
+  };
+}
+
+/** Reads existing destination rows for one source entity. */
+function getAgentForEachExclusions(sheet, columns, sourceKey, sourceValue, limit) {
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return [];
+  var values = sheet.getRange(2, 1, lastRow - 1, columns.length).getValues();
+  var keyIndex = columns.findIndex(function(column) { return column.key === sourceKey; });
+  return values.filter(function(row) {
+    return String(row[keyIndex] || '').trim().toLowerCase() === sourceValue.toLowerCase();
+  }).slice(0, limit || EXA_AGENT_CONFIG.maxExclusionRows).map(function(row) {
+    var result = {};
+    columns.forEach(function(column, index) { result[column.key] = formatAgentInputCellValue(row[index]); });
+    return result;
+  });
+}
+
+/** Starts exactly one Agent run for one prepared source row. */
+function startAgentForEachRun(job, config) {
+  var apiKey = getApiKey();
+  if (!apiKey) return { success: false, message: 'No API key set.' };
+  job = job || {};
+  config = config || {};
+  var destinationResult = getAgentWriteSheet({ sheetId: job.destinationSheetId, sheetName: job.destinationSheetName });
+  if (!destinationResult.success) return destinationResult;
+  var currentColumns = getAgentForEachColumns(destinationResult.sheet);
+  if (!currentColumns.success) return currentColumns;
+  if (!haveSameAgentForEachHeaders(job.columns, currentColumns.columns)) {
+    return { success: false, message: 'Destination headers changed. Prepare the batch again.' };
+  }
+  var columns = currentColumns.columns;
+  var rowLimit = Math.min(getAgentRequestedRowCount(config.prompt) || 5, 50);
+  var schema = buildAgentTableOutputSchema(columns, rowLimit);
+  schema.properties.rows.minItems = 0;
+  schema.properties.rows.items.properties[job.sourceKey].const = job.sourceValue;
+  var exclusions = getAgentForEachExclusions(destinationResult.sheet, columns, job.sourceKey, job.sourceValue);
+  var payload = {
+    query: String(config.prompt || '').trim() + '\n\nProcess only the single row in input.data. ' +
+      'Return up to ' + rowLimit + ' new rows with exactly the destination columns. ' +
+      'Set "' + job.sourceKey + '" to "' + job.sourceValue + '" in every output row. ' +
+      'Do not return entities in input.exclusion. Use web research; do not invent facts or pad with weak matches.',
+    systemPrompt: 'Return verified, concise, spreadsheet-ready values matching the provided JSON schema.',
+    input: { data: [job.data], exclusion: exclusions },
+    outputSchema: schema,
+    effort: normalizeAgentEffort(config.effort),
+    metadata: {
+      integration: 'exa-for-sheets', mode: 'agent-for-each-row',
+      sourceRow: String(job.sourceRow), destinationSheet: String(job.destinationSheetId)
+    }
+  };
+  try {
+    var response = fetchWithRetry(EXA_AGENT_CONFIG.endpoint, {
+      method: 'post', contentType: 'application/json', payload: JSON.stringify(payload),
+      headers: {
+        'x-api-key': apiKey, 'Exa-Beta': EXA_AGENT_CONFIG.betaHeader,
+        'x-exa-integration': 'exa-for-sheets', 'User-Agent': 'exa-for-sheets 2.0'
+      },
+      muteHttpExceptions: true
+    });
+    if (response.getResponseCode() !== 200) {
+      return { success: false, message: parseAgentApiError(response.getResponseCode(), response.getContentText(), 'Failed to start Agent run.') };
+    }
+    var run = JSON.parse(response.getContentText());
+    return {
+      success: true, run: summarizeAgentRun(run),
+      writeConfig: {
+        rootKey: 'rows', columns: columns,
+        sheetId: job.destinationSheetId, sheetName: job.destinationSheetName,
+        sourceKey: job.sourceKey, sourceValue: job.sourceValue
+      }
+    };
+  } catch (e) {
+    Logger.log('startAgentForEachRun Error: ' + e);
+    return { success: false, message: 'Could not start Agent run: ' + e.message };
+  }
+}
+
+/** Writes one completed row expansion to the destination table. */
+function writeAgentForEachRunToSheet(runId, writeConfig) {
+  var apiKey = getApiKey();
+  if (!apiKey) return { success: false, message: 'No API key set.' };
+  var fetched = fetchAgentRun(apiKey, runId);
+  if (!fetched.success) return fetched;
+  var run = fetched.run;
+  if (run.status !== 'completed') return { success: false, message: 'Agent run is not complete yet.' };
+  var sheetResult = getAgentWriteSheet(writeConfig);
+  if (!sheetResult.success) return sheetResult;
+  var sheet = sheetResult.sheet;
+  var lock = typeof LockService !== 'undefined' && LockService.getDocumentLock ? LockService.getDocumentLock() : null;
+  if (lock && !lock.tryLock(30000)) return {
+    success: false, retryable: true, retryAfterMs: 3000,
+    message: 'The destination sheet is busy. Try writing this run again.'
+  };
+  try {
+    var current = getAgentForEachColumns(sheet);
+    if (!current.success) return current;
+    if (!haveSameAgentForEachHeaders(writeConfig.columns, current.columns)) {
+      return { success: false, message: 'Destination headers changed during the run. No rows were written.' };
+    }
+    writeConfig.columns = current.columns;
+    var records = run.output && run.output.structured && run.output.structured.rows;
+    if (Array.isArray(records) && records.length === 0) {
+      return { success: true, rows: 0, message: 'No matching rows found.', runId: run.id };
+    }
+    var table = buildAgentSheetValues(run, writeConfig, false, false);
+    if (!table.success) return table;
+    var columns = writeConfig.columns;
+    var sourceIndex = columns.findIndex(function(column) { return column.key === writeConfig.sourceKey; });
+    if (sourceIndex < 0) return { success: false, message: 'The source identifier column is missing.' };
+    var existing = getAgentForEachExclusions(sheet, columns, writeConfig.sourceKey, writeConfig.sourceValue, Infinity);
+    var seen = {};
+    existing.forEach(function(record) {
+      var row = columns.map(function(column) { return record[column.key] || ''; });
+      getAgentFindMoreIdentityKeys(row, columns).forEach(function(key) { seen[key] = true; });
+    });
+    var unique = [];
+    table.values.forEach(function(row) {
+      if (String(row[sourceIndex] || '').trim().toLowerCase() !== String(writeConfig.sourceValue).trim().toLowerCase()) return;
+      var keys = getAgentFindMoreIdentityKeys(row, columns);
+      if (keys.some(function(key) { return seen[key]; })) return;
+      keys.forEach(function(key) { seen[key] = true; });
+      unique.push(row);
+    });
+    if (!unique.length) {
+      return { success: true, rows: 0, message: 'No new rows to append.', runId: run.id };
+    }
+    var startRow = sheet.getLastRow() + 1;
+    ensureSheetSize(sheet, startRow + unique.length - 1, columns.length);
+    var target = sheet.getRange(startRow, 1, unique.length, columns.length);
+    if (countNonEmptyCells(target.getValues()) > 0) {
+      return { success: false, message: 'The destination append area is not empty. No rows were written.' };
+    }
+    target.setValues(unique);
+    SpreadsheetApp.flush();
+    return {
+      success: true, rows: unique.length,
+      skipped: table.values.length - unique.length,
+      message: 'Appended ' + unique.length + ' new row(s).', runId: run.id
+    };
+  } catch (e) {
+    Logger.log('writeAgentForEachRunToSheet Error: ' + e);
+    return { success: false, message: 'Could not append rows: ' + e.message };
+  } finally {
+    if (lock) lock.releaseLock();
   }
 }
 
@@ -1637,7 +2005,7 @@ function writeAgentFillRunToSheet(runId, fillConfig) {
         return;
       }
 
-      cellRange.setValue(formatAgentCellValue(target.value));
+      cellRange.setValue(formatAgentFillTargetValue(target));
       filled++;
     });
 
@@ -2076,7 +2444,7 @@ function buildAgentFillRowContexts(tableValues, dataStartRow, table) {
  */
 function buildAgentFillPrompt(job, instructions) {
   var fieldLines = (job.fields || []).map(function(field) {
-    return '- ' + field.fieldId + ' (' + field.title + ', column ' + field.columnLetter + ')';
+    return formatAgentFillFieldPromptLine(field);
   }).join('\n');
 
   var targetLines = (job.targets || []).map(function(target) {
@@ -2095,7 +2463,7 @@ function buildAgentFillPrompt(job, instructions) {
     'Fill only the requested target cells listed below.',
     'Keep values short, clean, and spreadsheet-ready.',
     'Return null when a value cannot be verified from reliable public sources.',
-    'Do not invent values. Do not return notes, citations, sources, markdown, or extra fields.',
+    'Do not invent values. Do not return notes, markdown, or extra fields. Only return citations or sources when a requested target field explicitly asks for them.',
     contactGuidance,
     '',
     'Target fields:',
@@ -2114,7 +2482,7 @@ function buildAgentFillPrompt(job, instructions) {
  */
 function buildAgentContinueTablePrompt(job, instructions) {
   var fieldLines = (job.fields || []).map(function(field) {
-    return '- ' + field.fieldId + ' (' + field.title + ', column ' + field.columnLetter + ')';
+    return formatAgentFillFieldPromptLine(field);
   }).join('\n');
 
   var targetRows = formatAgentTargetRows(job.targets || []);
@@ -2134,7 +2502,7 @@ function buildAgentContinueTablePrompt(job, instructions) {
     'Every new row must be a real, source-verifiable entity that belongs next in the table.',
     'Keep values short, clean, and spreadsheet-ready.',
     'Return null when a value cannot be verified from reliable public sources.',
-    'Do not invent values. Do not return notes, citations, sources, markdown, or extra fields.',
+    'Do not invent values. Do not return notes, markdown, or extra fields. Only return citations or sources when a requested target field explicitly asks for them.',
     contactGuidance,
     '',
     'Target fields:',
@@ -2171,6 +2539,15 @@ function formatAgentTargetRows(targets) {
   }).join('\n');
 }
 
+function formatAgentFillFieldPromptLine(field) {
+  var line = '- ' + field.fieldId + ' (' + field.title + ', column ' + field.columnLetter + ')';
+  var citationSpec = getAgentCitationTargetSpec(field);
+  if (citationSpec) {
+    line += ': ' + getAgentCitationFormatInstruction(citationSpec);
+  }
+  return line;
+}
+
 /**
  * Builds the strict output schema for one fill job.
  */
@@ -2183,10 +2560,14 @@ function buildAgentFillOutputSchema(job) {
   (job.fields || []).forEach(function(field) {
     requiredFields.push(field.fieldId);
     var format = getAgentFieldFormat(field);
+    var citationSpec = getAgentCitationTargetSpec(field);
+    var description = citationSpec
+      ? getAgentCitationFormatInstruction(citationSpec) + ' Return null if unavailable.'
+      : 'Value for ' + field.title + '. Return null if unavailable.';
     if (isAgentContactFormat(format)) {
       properties[field.fieldId] = applyAgentFormatToStringSchema({
         type: ['string', 'null'],
-        description: 'Value for ' + field.title + '. Return null if unavailable.'
+        description: description
       }, format);
     } else {
       properties[field.fieldId] = {
@@ -2197,7 +2578,7 @@ function buildAgentFillOutputSchema(job) {
           { type: 'array', items: applyAgentFormatToStringSchema({ type: 'string' }, format) },
           { type: 'null' }
         ],
-        description: 'Value for ' + field.title + '. Return null if unavailable.'
+        description: description
       };
     }
   });
@@ -2206,7 +2587,7 @@ function buildAgentFillOutputSchema(job) {
     additionalProperties: false,
     properties: properties
   };
-  if (job && job.mode === 'continue-table' && requiredFields.length > 0) {
+  if (requiredFields.length > 0) {
     valuesSchema.required = requiredFields;
   }
 
@@ -2259,9 +2640,13 @@ function extractAgentFillValues(run, fillConfig) {
   });
 
   var valuesByTarget = {};
-  records.forEach(function(record) {
+  var recordIndexByRowId = {};
+  records.forEach(function(record, recordIndex) {
     if (!record || typeof record !== 'object') return;
     var rowId = String(record.rowId || record.row_id || '');
+    if (rowId && recordIndexByRowId[rowId] === undefined) {
+      recordIndexByRowId[rowId] = recordIndex;
+    }
     var values = record.values && typeof record.values === 'object' ? record.values : record;
     Object.keys(values).forEach(function(fieldId) {
       var key = rowId + '::' + fieldId;
@@ -2275,16 +2660,158 @@ function extractAgentFillValues(run, fillConfig) {
     success: true,
     targets: targets.map(function(target) {
       var key = target.rowId + '::' + target.fieldId;
+      var value = Object.prototype.hasOwnProperty.call(valuesByTarget, key) ? valuesByTarget[key] : '';
+      var citationSpec = getAgentCitationTargetSpec(target);
+      if (citationSpec && isBlankValue(value)) {
+        var recordIndex = recordIndexByRowId[target.rowId];
+        if (recordIndex !== undefined) {
+          var citations = getAgentGroundingCitationsForRow(run, 'rows', recordIndex);
+          if (citations.length > 0) {
+            value = formatAgentGroundingCitations(citations, citationSpec);
+          }
+        }
+      }
       return {
         row: target.row,
         column: target.column,
         cell: target.cell,
         rowId: target.rowId,
         fieldId: target.fieldId,
-        value: Object.prototype.hasOwnProperty.call(valuesByTarget, key) ? valuesByTarget[key] : ''
+        title: target.title,
+        value: value
       };
     })
   };
+}
+
+function isAgentEvidenceSourceTarget(target) {
+  return !!getAgentCitationTargetSpec(target);
+}
+
+function getAgentCitationTargetSpec(target) {
+  var fieldText = String(target && (target.fieldId || target.key) || '')
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  var titleText = String(target && (target.title || target.label) || '')
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  var text = (fieldText + ' ' + titleText).trim();
+  var hasCitationConcept = /\b(evidence|sources?|citations?|references?|grounding|provenance)\b/.test(text);
+  if (!hasCitationConcept) {
+    return null;
+  }
+
+  var hasPresentationHint = /\b(urls?|links?|markdown|json|titles?|names?)\b/.test(text);
+  var isBareCitationColumn = /^(sources?|citations?|references?)$/.test(fieldText) ||
+    /^(sources?|citations?|references?)$/.test(titleText);
+  var isPreferredSourceColumn = /\b(primary|preferred|best|first|top)\s+(source|citation|reference)\b/.test(text);
+  if (!hasPresentationHint && !isBareCitationColumn && !isPreferredSourceColumn) {
+    return null;
+  }
+
+  var format = 'url-list';
+  if (/\bjson\b/.test(text)) {
+    format = 'json';
+  } else if (/\bmarkdown\b/.test(text)) {
+    format = 'markdown';
+  } else if (/\b(titles?|names?)\b/.test(text) && !/\b(urls?|links?)\b/.test(text)) {
+    format = 'title-list';
+  } else if (isPreferredSourceColumn ||
+      (/\b(url|link)\b/.test(text) &&
+       !/\b(urls|links)\b/.test(text) &&
+       !/\b(url|link)\s*\(s\)/.test(text))) {
+    format = 'single-url';
+  }
+
+  return { format: format };
+}
+
+function getAgentCitationFormatInstruction(citationSpec) {
+  var format = citationSpec && citationSpec.format;
+  if (format === 'single-url') {
+    return 'Return one best supporting source URL as a plain URL';
+  }
+  if (format === 'markdown') {
+    return 'Return supporting sources as Markdown links separated by semicolons';
+  }
+  if (format === 'json') {
+    return 'Return a JSON string containing supporting sources with title and url fields';
+  }
+  if (format === 'title-list') {
+    return 'Return supporting source titles separated by semicolons';
+  }
+  return 'Return supporting source URLs as plain URLs separated by semicolons';
+}
+
+function formatAgentFillTargetValue(target) {
+  var value = target ? target.value : '';
+  var citationSpec = getAgentCitationTargetSpec(target);
+  if (citationSpec) {
+    return formatAgentCitationValue(value, citationSpec);
+  }
+  return formatAgentCellValue(value);
+}
+
+function formatAgentCitationValue(value, citationSpec) {
+  var format = citationSpec && citationSpec.format;
+  if (!Array.isArray(value)) {
+    if (value && typeof value === 'object') {
+      return format === 'json' ? JSON.stringify(value) : formatAgentCellValue(value);
+    }
+    return value === null || value === undefined ? '' : value;
+  }
+
+  if (format === 'json') {
+    return JSON.stringify(value);
+  }
+
+  var rendered = value.map(function(item, index) {
+    if (!item || typeof item !== 'object') {
+      var stringValue = String(item || '');
+      if (format === 'markdown' && /^https?:\/\//i.test(stringValue)) {
+        return '[Source ' + (index + 1) + '](' + stringValue + ')';
+      }
+      return stringValue;
+    }
+
+    var url = String(item.url || item.href || '');
+    var title = String(item.title || item.name || 'Source ' + (index + 1));
+    if (format === 'markdown' && url) return '[' + title + '](' + url + ')';
+    if (format === 'title-list') return title;
+    return url || title;
+  }).filter(function(item) { return item !== ''; });
+
+  if (format === 'single-url') {
+    return rendered.length > 0 ? rendered[0] : '';
+  }
+  return rendered.join('; ');
+}
+
+function formatAgentGroundingCitations(citations, citationSpec) {
+  var format = citationSpec && citationSpec.format;
+  if (format === 'json') {
+    return JSON.stringify(citations.map(function(citation) {
+      return { title: citation.title || '', url: citation.url };
+    }));
+  }
+  if (format === 'single-url') {
+    return citations.length > 0 ? citations[0].url : '';
+  }
+  if (format === 'markdown') {
+    return citations.map(function(citation, index) {
+      return '[' + (citation.title || 'Source ' + (index + 1)) + '](' + citation.url + ')';
+    }).join('; ');
+  }
+  if (format === 'title-list') {
+    return citations.map(function(citation) {
+      return citation.title || citation.url;
+    }).join('; ');
+  }
+  return citations.map(function(citation) { return citation.url; }).join('; ');
 }
 
 /**
@@ -2582,6 +3109,10 @@ function writeAgentRunToSheet(runId, tableConfig, writeOptions) {
     };
   }
 
+  if (tableConfig && tableConfig.mode === 'find-more') {
+    return appendAgentFindMoreRows(run, tableConfig);
+  }
+
   writeOptions = writeOptions || {};
   var tableResult = buildAgentSheetValues(
     run,
@@ -2660,6 +3191,109 @@ function writeAgentRunToSheet(runId, tableConfig, writeOptions) {
   } catch (e) {
     Logger.log('writeAgentRunToSheet Error: ' + e);
     return { success: false, message: 'Operation failed: ' + e.message };
+  }
+}
+
+/**
+ * Returns stable keys for duplicate detection without relying on every enrichment field.
+ */
+function getAgentFindMoreIdentityKeys(row, columns) {
+  var byKey = {};
+  columns.forEach(function(column, index) {
+    byKey[column.key] = String(row[index] === null || row[index] === undefined ? '' : row[index]).trim().toLowerCase();
+  });
+  var keys = [];
+  var name = byKey.name || byKey.full_name || byKey.person_name || '';
+  var company = byKey.company || byKey.company_name || byKey.organization || '';
+  var entityName = name || byKey.company_name || byKey.product_name || '';
+  ['profile_url', 'linkedin_url', 'linkedin_profile_url'].forEach(function(key) {
+    if (byKey[key]) keys.push('profile:' + byKey[key].replace(/[?#].*$/, '').replace(/\/+$/, ''));
+  });
+  if (name) keys.push('name:' + name + '|company:' + company);
+  if (!name && entityName) keys.push('entity:' + entityName);
+  if (!name && byKey.website_url) keys.push('website:' + byKey.website_url.replace(/[?#].*$/, '').replace(/\/+$/, ''));
+  keys.push('row:' + columns.map(function(column) { return byKey[column.key] || ''; }).join('\u001f'));
+  return keys;
+}
+
+/**
+ * Appends only new Agent rows under the selected table, leaving existing cells untouched.
+ */
+function appendAgentFindMoreRows(run, tableConfig) {
+  var sheetResult = getAgentWriteSheet(tableConfig);
+  if (!sheetResult.success) return sheetResult;
+  var sheet = sheetResult.sheet;
+  var lock = typeof LockService !== 'undefined' && LockService.getDocumentLock ? LockService.getDocumentLock() : null;
+  if (lock && !lock.tryLock(30000)) {
+    return { success: false, message: 'The sheet is busy. Try writing this run again.' };
+  }
+
+  try {
+    var selected = sheet.getRange(tableConfig.exclusionRange);
+    var current = buildAgentTableExclusionsFromSelection(selected);
+    if (!current.success) return current;
+    var columns = tableConfig.columns || [];
+    if (current.columns.length !== columns.length || current.columns.some(function(column, index) {
+      return column.key !== columns[index].key || column.label !== columns[index].label;
+    })) {
+      return { success: false, message: 'The table headers changed during the run. Start a new Find more run.' };
+    }
+
+    var startRow = selected.getRow();
+    var startCol = selected.getColumn();
+    var appendRow = startRow + selected.getNumRows();
+    var lastRow = sheet.getLastRow();
+    if (lastRow >= appendRow && countNonEmptyCells(sheet.getRange(appendRow, startCol, 1, columns.length).getValues()) > 0) {
+      return { success: false, message: 'There is data below the selected table. Select the full table or move the other data before appending.' };
+    }
+
+    var records = run.output && run.output.structured && run.output.structured.rows;
+    if (Array.isArray(records) && records.length === 0) {
+      return { success: true, message: 'No additional rows were found.', rows: 0, runId: run.id };
+    }
+    var table = buildAgentSheetValues(run, tableConfig, false, false);
+    if (!table.success) return table;
+    var seen = {};
+    current.rows.forEach(function(record) {
+      var values = columns.map(function(column) { return record[column.key] || ''; });
+      getAgentFindMoreIdentityKeys(values, columns).forEach(function(key) { seen[key] = true; });
+    });
+    var unique = [];
+    table.values.forEach(function(values) {
+      var keys = getAgentFindMoreIdentityKeys(values, columns);
+      if (keys.some(function(key) { return seen[key]; })) return;
+      keys.forEach(function(key) { seen[key] = true; });
+      unique.push(values);
+    });
+    if (unique.length === 0) {
+      return { success: true, message: 'No new rows to append; all returned rows were already in the table.', rows: 0, runId: run.id };
+    }
+    ensureSheetSize(sheet, appendRow + unique.length - 1, startCol + columns.length - 1);
+    var target = sheet.getRange(appendRow, startCol, unique.length, columns.length);
+    if (countNonEmptyCells(target.getValues()) > 0) {
+      return { success: false, message: 'The append area is no longer empty. No rows were written.' };
+    }
+    target.setValues(unique);
+    try {
+      if (sheet.setActiveRange) {
+        sheet.setActiveRange(sheet.getRange(startRow, startCol, selected.getNumRows() + unique.length, columns.length));
+      }
+    } catch (selectionError) {
+      Logger.log('Could not expand Find more selection: ' + selectionError);
+    }
+    SpreadsheetApp.flush();
+    return {
+      success: true,
+      message: 'Appended ' + unique.length + ' new row(s) below the selected table.',
+      rows: unique.length,
+      skippedDuplicates: table.values.length - unique.length,
+      runId: run.id
+    };
+  } catch (e) {
+    Logger.log('appendAgentFindMoreRows Error: ' + e);
+    return { success: false, message: 'Could not append Agent rows: ' + e.message };
+  } finally {
+    if (lock) lock.releaseLock();
   }
 }
 
@@ -2968,14 +3602,24 @@ function formatAgentCellValue(value) {
  * @return {string} Comma-separated URLs
  */
 function getAgentGroundingSourcesForRow(run, rootKey, rowIndex) {
+  return getAgentGroundingSourceUrlsForRow(run, rootKey, rowIndex).join(', ');
+}
+
+function getAgentGroundingSourceUrlsForRow(run, rootKey, rowIndex) {
+  return getAgentGroundingCitationsForRow(run, rootKey, rowIndex).map(function(citation) {
+    return citation.url;
+  });
+}
+
+function getAgentGroundingCitationsForRow(run, rootKey, rowIndex) {
   var grounding = run && run.output && Array.isArray(run.output.grounding) ? run.output.grounding : [];
   if (!rootKey) {
-    return '';
+    return [];
   }
 
   var prefix = 'structured.' + rootKey + '[' + rowIndex + ']';
   var seen = {};
-  var urls = [];
+  var citations = [];
 
   grounding.forEach(function(item) {
     if (!item || typeof item.field !== 'string' || item.field.indexOf(prefix) !== 0) {
@@ -2985,12 +3629,15 @@ function getAgentGroundingSourcesForRow(run, rootKey, rowIndex) {
     (item.citations || []).forEach(function(citation) {
       if (citation && citation.url && !seen[citation.url]) {
         seen[citation.url] = true;
-        urls.push(citation.url);
+        citations.push({
+          url: citation.url,
+          title: citation.title || citation.name || ''
+        });
       }
     });
   });
 
-  return urls.join(', ');
+  return citations;
 }
 
 /**

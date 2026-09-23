@@ -978,9 +978,66 @@ describe('Agent Table', () => {
   test('inferAgentRowLimit should use counts from the prompt without exposing a rows field', () => {
     expect(inferAgentRowLimit('Find top 50 AI companies')).toBe(50);
     expect(inferAgentRowLimit('return 12 rows of startups')).toBe(12);
+    expect(inferAgentRowLimit('Find up to 3 relevant contacts')).toBe(3);
     expect(inferAgentRowLimit('Find top 250 companies')).toBe(250);
     expect(inferAgentRowLimit('Find top 1000 companies')).toBe(1000);
     expect(inferAgentRowLimit('Find AI companies')).toBe(EXA_AGENT_CONFIG.defaultRows);
+  });
+
+  test('buildAgentTableExclusionsFromSelection should preserve selected headers and rows', () => {
+    const selection = {
+      getNumRows: () => 3,
+      getNumColumns: () => 3,
+      getA1Notation: () => 'B5:D7',
+      getValues: () => [
+        ['Company Name', 'Website URL', 'Company Name'],
+        ['Northwind Labs', 'https://northwind.example', 'Northwind'],
+        ['Contoso Works', 'https://contoso.example', 'Contoso']
+      ]
+    };
+
+    const result = buildAgentTableExclusionsFromSelection(selection);
+
+    expect(result.success).toBe(true);
+    expect(result.range).toBe('B5:D7');
+    expect(result.columns.map(column => column.key)).toEqual([
+      'company_name', 'website_url', 'company_name_2'
+    ]);
+    expect(result.rows).toEqual([
+      {
+        company_name: 'Northwind Labs',
+        website_url: 'https://northwind.example',
+        company_name_2: 'Northwind'
+      },
+      {
+        company_name: 'Contoso Works',
+        website_url: 'https://contoso.example',
+        company_name_2: 'Contoso'
+      }
+    ]);
+  });
+
+  test('buildAgentTableExclusionsFromSelection should reject missing headers and data rows', () => {
+    const noHeaders = {
+      getNumRows: () => 2,
+      getNumColumns: () => 2,
+      getValues: () => [['', ''], ['value', 'value']]
+    };
+    const noData = {
+      getNumRows: () => 2,
+      getNumColumns: () => 2,
+      getRow: () => 1,
+      getValues: () => [['Company', 'Domain'], ['', '']]
+    };
+
+    expect(buildAgentTableExclusionsFromSelection(noHeaders)).toEqual(expect.objectContaining({
+      success: false,
+      message: expect.stringContaining('header')
+    }));
+    expect(buildAgentTableExclusionsFromSelection(noData)).toEqual(expect.objectContaining({
+      success: false,
+      message: expect.stringContaining('existing data row')
+    }));
   });
 
   test('startAgentTableRun should call /agent/runs with auto-column table schema', () => {
@@ -1045,7 +1102,96 @@ describe('Agent Table', () => {
     expect(payload.query).not.toContain('explicitly perform contact enrichment');
     expect(payload.query).toContain('Infer the best concise column headers');
     expect(payload.metadata.startCell).toBe('L14');
+    expect(payload.input).toBeUndefined();
 
+    SpreadsheetApp.getActiveSheet = originalGetActiveSheet;
+  });
+
+  test('startAgentTableRun should send selected rows as exclusions and keep the existing columns', () => {
+    const originalGetActiveSheet = SpreadsheetApp.getActiveSheet;
+    const selection = {
+      getNumRows: () => 3,
+      getNumColumns: () => 3,
+      getRow: () => 1,
+      getColumn: () => 1,
+      getA1Notation: () => 'A1:C3',
+      getValues: () => [
+        ['Company', 'Domain', 'Market'],
+        ['Northwind Labs', 'northwind.example', 'Software'],
+        ['Contoso Works', 'contoso.example', 'Retail']
+      ]
+    };
+    SpreadsheetApp.getActiveSheet = jest.fn(() => ({
+      getActiveRange: () => selection,
+      getLastRow: () => 3,
+      getSheetId: () => 42,
+      getName: () => 'Input'
+    }));
+
+    UrlFetchApp.fetch.mockReturnValue({
+      getResponseCode: () => 200,
+      getContentText: () => JSON.stringify({
+        id: 'agent_run_selection',
+        object: 'agent_run',
+        status: 'running',
+        output: { text: '', structured: null, grounding: [] },
+        usage: { searches: 0 },
+        costDollars: { total: 0 }
+      })
+    });
+
+    const result = startAgentTableRun({
+      prompt: 'Find 3 more companies',
+      columns: 'Ignored',
+      effort: 'auto',
+      mode: 'find-more'
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.tableConfig.startCell).toBe('A4');
+    expect(result.tableConfig.mode).toBe('find-more');
+    expect(result.tableConfig.exclusionRange).toBe('A1:C3');
+    expect(result.tableConfig.exclusionRows).toBe(2);
+
+    const payload = JSON.parse(UrlFetchApp.fetch.mock.calls[0][1].payload);
+    expect(payload.input.exclusion).toEqual([
+      {
+        company: 'Northwind Labs',
+        domain: 'northwind.example',
+        market: 'Software'
+      },
+      {
+        company: 'Contoso Works',
+        domain: 'contoso.example',
+        market: 'Retail'
+      }
+    ]);
+    expect(payload.input.data).toBeUndefined();
+    expect(payload.outputSchema.properties.rows.maxItems).toBe(3);
+    expect(payload.outputSchema.properties.rows.minItems).toBe(0);
+    expect(payload.outputSchema.properties.rows.items.required).toEqual(['company', 'domain', 'market']);
+    expect(payload.query).toContain('input.exclusion');
+    expect(payload.metadata.exclusionRange).toBe('A1:C3');
+    expect(payload.metadata.exclusionRows).toBe('2');
+    expect(payload.metadata.startCell).toBe('A4');
+
+    SpreadsheetApp.getActiveSheet = originalGetActiveSheet;
+  });
+
+  test('Find more should reject an incomplete table selection before creating a paid run', () => {
+    const { sheet } = createMockSheet([
+      ['Company', 'Name'],
+      ['Northwind Labs', 'Avery Chen'],
+      ['Northwind Labs', 'Jordan Lee']
+    ], 'A1:B2');
+    const originalGetActiveSheet = SpreadsheetApp.getActiveSheet;
+    SpreadsheetApp.getActiveSheet = jest.fn(() => sheet);
+
+    const result = startAgentTableRun({ prompt: 'Find 3 more people', mode: 'find-more' });
+
+    expect(result.success).toBe(false);
+    expect(result.message).toContain('Select the full table');
+    expect(UrlFetchApp.fetch).not.toHaveBeenCalled();
     SpreadsheetApp.getActiveSheet = originalGetActiveSheet;
   });
 
@@ -1580,6 +1726,69 @@ describe('Agent Table', () => {
       delete SpreadsheetApp.getActiveSpreadsheet;
     }
   });
+
+  test('Find more should append only new rows under the selected table', () => {
+    const columns = parseAgentColumns('Company, Name, Profile URL, Job Title').columns;
+    const { sheet, writes } = createMockSheet([
+      ['Company', 'Name', 'Profile URL', 'Job Title'],
+      ['Northwind Labs', 'Avery Chen', 'https://example.com/avery', 'VP Support']
+    ], 'A1:D2');
+    const originalGetActiveSheet = SpreadsheetApp.getActiveSheet;
+    SpreadsheetApp.getActiveSheet = jest.fn(() => sheet);
+    UrlFetchApp.fetch.mockReturnValue({
+      getResponseCode: () => 200,
+      getContentText: () => JSON.stringify({
+        id: 'agent_run_more', status: 'completed', output: { structured: { rows: [
+          { company: 'Northwind Labs', name: 'Avery Chen', profile_url: 'https://example.com/avery/', job_title: 'VP Support' },
+          { company: 'Northwind Labs', name: 'Jordan Lee', profile_url: 'https://example.com/jordan', job_title: 'Director of CX' },
+          { company: 'Northwind Labs', name: 'Jordan Lee', profile_url: 'https://example.com/jordan', job_title: 'Director of CX' }
+        ] } }
+      })
+    });
+
+    const result = writeAgentRunToSheet('agent_run_more', {
+      mode: 'find-more', rootKey: 'rows', columns, exclusionRange: 'A1:D2'
+    }, {});
+
+    expect(result.success).toBe(true);
+    expect(result.rows).toBe(1);
+    expect(result.skippedDuplicates).toBe(2);
+    expect(writes).toEqual([
+      { row: 3, col: 1, value: 'Northwind Labs' },
+      { row: 3, col: 2, value: 'Jordan Lee' },
+      { row: 3, col: 3, value: 'https://example.com/jordan' },
+      { row: 3, col: 4, value: 'Director of CX' }
+    ]);
+    SpreadsheetApp.getActiveSheet = originalGetActiveSheet;
+  });
+
+  test('Find more should not overwrite rows below an incomplete selection', () => {
+    const columns = parseAgentColumns('Company, Name').columns;
+    const { sheet, writes } = createMockSheet([
+      ['Company', 'Name'],
+      ['Northwind Labs', 'Avery Chen'],
+      ['Northwind Labs', 'Jordan Lee']
+    ], 'A1:B2');
+    const originalGetActiveSheet = SpreadsheetApp.getActiveSheet;
+    SpreadsheetApp.getActiveSheet = jest.fn(() => sheet);
+    UrlFetchApp.fetch.mockReturnValue({
+      getResponseCode: () => 200,
+      getContentText: () => JSON.stringify({
+        id: 'agent_run_more', status: 'completed', output: { structured: { rows: [
+          { company: 'Northwind Labs', name: 'Taylor Rivera' }
+        ] } }
+      })
+    });
+
+    const result = writeAgentRunToSheet('agent_run_more', {
+      mode: 'find-more', rootKey: 'rows', columns, exclusionRange: 'A1:B2'
+    }, {});
+
+    expect(result.success).toBe(false);
+    expect(result.message).toContain('data below');
+    expect(writes).toEqual([]);
+    SpreadsheetApp.getActiveSheet = originalGetActiveSheet;
+  });
 });
 
 function testColumnToNumber(label) {
@@ -1679,6 +1888,232 @@ function createMockSheet(data, selectionA1, formulas = [], options = {}) {
 
   return { sheet, writes, data };
 }
+
+describe('For Each Row', () => {
+  let originalGetActiveSheet;
+  let originalGetActiveSpreadsheet;
+
+  beforeEach(() => {
+    resetMocks();
+    saveApiKey('exa_test_api_key');
+    originalGetActiveSheet = SpreadsheetApp.getActiveSheet;
+    originalGetActiveSpreadsheet = SpreadsheetApp.getActiveSpreadsheet;
+  });
+
+  afterEach(() => {
+    SpreadsheetApp.getActiveSheet = originalGetActiveSheet;
+    if (originalGetActiveSpreadsheet) {
+      SpreadsheetApp.getActiveSpreadsheet = originalGetActiveSpreadsheet;
+    } else {
+      delete SpreadsheetApp.getActiveSpreadsheet;
+    }
+  });
+
+  function setSheets(sourceData, destinationData, selection = 'A1:A1') {
+    const source = createMockSheet(sourceData, selection, [], { name: 'Source', sheetId: 11 });
+    const destination = createMockSheet(destinationData, 'A1', [], { name: 'Results', sheetId: 22 });
+    SpreadsheetApp.getActiveSheet = jest.fn(() => source.sheet);
+    SpreadsheetApp.getActiveSpreadsheet = jest.fn(() => ({
+      getSheets: () => [source.sheet, destination.sheet],
+      getSheetByName: name => ({ Source: source.sheet, Results: destination.sheet }[name] || null)
+    }));
+    return { source, destination };
+  }
+
+  test('prepares one job per source row with a shared destination schema', () => {
+    setSheets([
+      ['Company', 'Website'],
+      ['Northwind Labs', 'northwind.example'],
+      ['Contoso Works', 'contoso.example']
+    ], [['Company', 'Name', 'Profile URL']]);
+
+    const result = prepareAgentForEachJobs({ prompt: 'Find 3 leaders', destinationSheetId: 22, scope: 'all' });
+
+    expect(result.success).toBe(true);
+    expect(result.jobs).toHaveLength(2);
+    expect(result.jobs[0].data).toEqual({
+      source_row_id: 'row_2', company: 'Northwind Labs', website: 'northwind.example'
+    });
+    expect(result.jobs[1].sourceValue).toBe('Contoso Works');
+    expect(result.jobs[0].columns.map(column => column.key)).toEqual(['company', 'name', 'profile_url']);
+    expect(UrlFetchApp.fetch).not.toHaveBeenCalled();
+  });
+
+  test('uses selected source rows without requiring the selection to include headers', () => {
+    setSheets([
+      ['Company', 'Website'],
+      ['Northwind Labs', 'northwind.example'],
+      ['Contoso Works', 'contoso.example']
+    ], [['Company', 'Name']], 'B3');
+
+    const result = prepareAgentForEachJobs({ prompt: 'Find leaders', destinationSheetId: 22, scope: 'selected' });
+
+    expect(result.success).toBe(true);
+    expect(result.jobs).toHaveLength(1);
+    expect(result.jobs[0].sourceRow).toBe(3);
+    expect(result.jobs[0].sourceValue).toBe('Contoso Works');
+  });
+
+  test('requires the destination to repeat the first source column', () => {
+    setSheets([['Company'], ['Northwind Labs']], [['Name', 'Profile URL']]);
+
+    const result = prepareAgentForEachJobs({ prompt: 'Find leaders', destinationSheetId: 22, scope: 'all' });
+
+    expect(result.success).toBe(false);
+    expect(result.message).toContain('Company');
+  });
+
+  test('rejects duplicate source identifiers before making paid calls', () => {
+    setSheets([['Company'], ['Northwind Labs'], ['northwind labs']], [['Company', 'Name']]);
+
+    const result = prepareAgentForEachJobs({ prompt: 'Find leaders', destinationSheetId: 22, scope: 'all' });
+
+    expect(result.success).toBe(false);
+    expect(result.message).toContain('Duplicate value');
+    expect(UrlFetchApp.fetch).not.toHaveBeenCalled();
+  });
+
+  test('starts a separate Agent request with one input row, exclusions, and the destination schema', () => {
+    setSheets([
+      ['Company', 'Website'], ['Northwind Labs', 'northwind.example']
+    ], [
+      ['Company', 'Name', 'Profile URL'],
+      ['Northwind Labs', 'Avery Chen', 'https://example.com/avery']
+    ]);
+    const job = prepareAgentForEachJobs({ prompt: 'Find 3 leaders', destinationSheetId: 22, scope: 'all' }).jobs[0];
+    UrlFetchApp.fetch.mockReturnValue({
+      getResponseCode: () => 200,
+      getContentText: () => JSON.stringify({ id: 'agent_run_each', status: 'queued' })
+    });
+
+    const result = startAgentForEachRun(job, { prompt: 'Find 3 leaders', effort: 'auto' });
+    const payload = JSON.parse(UrlFetchApp.fetch.mock.calls[0][1].payload);
+
+    expect(result.success).toBe(true);
+    expect(result.writeConfig.sheetId).toBe(22);
+    expect(payload.input.data).toEqual([job.data]);
+    expect(payload.input.exclusion).toEqual([{
+      company: 'Northwind Labs', name: 'Avery Chen', profile_url: 'https://example.com/avery'
+    }]);
+    expect(payload.outputSchema.properties.rows.maxItems).toBe(3);
+    expect(payload.outputSchema.properties.rows.items.properties.company.const).toBe('Northwind Labs');
+  });
+
+  test('accepts unchanged headers when column object properties arrive in a different order', () => {
+    const { destination } = setSheets([['Company'], ['Northwind Labs']], [['Company', 'Name']]);
+    const job = prepareAgentForEachJobs({
+      prompt: 'Find leaders', destinationSheetId: 22, scope: 'all'
+    }).jobs[0];
+    job.columns = job.columns.map(column => ({
+      format: column.format, type: column.type, label: column.label, key: column.key
+    }));
+    expect(JSON.stringify(job.columns)).not.toBe(JSON.stringify(getAgentForEachColumns(destination.sheet).columns));
+    UrlFetchApp.fetch.mockReturnValue({
+      getResponseCode: () => 200,
+      getContentText: () => JSON.stringify({ id: 'agent_run_each', status: 'queued' })
+    });
+
+    const result = startAgentForEachRun(job, { prompt: 'Find leaders', effort: 'auto' });
+
+    expect(result.success).toBe(true);
+    expect(result.writeConfig.columns).toEqual(getAgentForEachColumns(destination.sheet).columns);
+    expect(UrlFetchApp.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  test('still rejects a real destination header change before a paid call', () => {
+    const { destination } = setSheets([['Company'], ['Northwind Labs']], [['Company', 'Name']]);
+    const job = prepareAgentForEachJobs({
+      prompt: 'Find leaders', destinationSheetId: 22, scope: 'all'
+    }).jobs[0];
+    destination.data[0][1] = 'Role';
+
+    const result = startAgentForEachRun(job, { prompt: 'Find leaders', effort: 'auto' });
+
+    expect(result.success).toBe(false);
+    expect(result.message).toContain('Destination headers changed');
+    expect(UrlFetchApp.fetch).not.toHaveBeenCalled();
+  });
+
+  test('appends only new rows belonging to the source entity', () => {
+    const { destination } = setSheets([['Company'], ['Northwind Labs']], [
+      ['Company', 'Name', 'Profile URL'],
+      ['Northwind Labs', 'Avery Chen', 'https://example.com/avery']
+    ]);
+    const columns = getAgentForEachColumns(destination.sheet).columns;
+    UrlFetchApp.fetch.mockReturnValue({
+      getResponseCode: () => 200,
+      getContentText: () => JSON.stringify({
+        id: 'agent_run_each', status: 'completed', output: { structured: { rows: [
+          { company: 'Northwind Labs', name: 'Avery Chen', profile_url: 'https://example.com/avery/' },
+          { company: 'Northwind Labs', name: 'Jordan Lee', profile_url: 'https://example.com/jordan' },
+          { company: 'Other Company', name: 'Morgan Patel', profile_url: 'https://example.com/morgan' }
+        ] } }
+      })
+    });
+
+    const result = writeAgentForEachRunToSheet('agent_run_each', {
+      rootKey: 'rows', columns, sheetId: 22, sheetName: 'Results',
+      sourceKey: 'company', sourceValue: 'Northwind Labs'
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.rows).toBe(1);
+    expect(destination.writes).toEqual([
+      { row: 3, col: 1, value: 'Northwind Labs' },
+      { row: 3, col: 2, value: 'Jordan Lee' },
+      { row: 3, col: 3, value: 'https://example.com/jordan' }
+    ]);
+  });
+
+  test('writes a completed run when returned column object properties are reordered', () => {
+    const { destination } = setSheets([['Company'], ['Northwind Labs']], [['Company', 'Name']]);
+    const columns = getAgentForEachColumns(destination.sheet).columns.map(column => ({
+      format: column.format, type: column.type, label: column.label, key: column.key
+    }));
+    UrlFetchApp.fetch.mockReturnValue({
+      getResponseCode: () => 200,
+      getContentText: () => JSON.stringify({
+        id: 'agent_run_each', status: 'completed', output: { structured: { rows: [
+          { company: 'Northwind Labs', name: 'Jordan Lee' }
+        ] } }
+      })
+    });
+
+    const result = writeAgentForEachRunToSheet('agent_run_each', {
+      rootKey: 'rows', columns, sheetId: 22, sheetName: 'Results',
+      sourceKey: 'company', sourceValue: 'Northwind Labs'
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.rows).toBe(1);
+    expect(destination.writes).toEqual([
+      { row: 2, col: 1, value: 'Northwind Labs' },
+      { row: 2, col: 2, value: 'Jordan Lee' }
+    ]);
+  });
+
+  test('retries a busy destination lock instead of failing the row', () => {
+    const { destination } = setSheets([['Company'], ['Northwind Labs']], [['Company', 'Name']]);
+    const columns = getAgentForEachColumns(destination.sheet).columns;
+    UrlFetchApp.fetch.mockReturnValue({
+      getResponseCode: () => 200,
+      getContentText: () => JSON.stringify({ id: 'agent_run_each', status: 'completed' })
+    });
+    global.LockService = { getDocumentLock: () => ({ tryLock: () => false }) };
+
+    try {
+      const result = writeAgentForEachRunToSheet('agent_run_each', {
+        rootKey: 'rows', columns, sheetId: 22, sheetName: 'Results',
+        sourceKey: 'company', sourceValue: 'Northwind Labs'
+      });
+      expect(result.success).toBe(false);
+      expect(result.retryable).toBe(true);
+      expect(result.retryAfterMs).toBe(3000);
+    } finally {
+      delete global.LockService;
+    }
+  });
+});
 
 describe('Agent Fill Cells', () => {
   beforeEach(() => {
@@ -1919,7 +2354,8 @@ describe('Agent Fill Cells', () => {
     expect(payload.input.targets).toBeUndefined();
     expect(payload.outputSchema.properties.rows.items.properties.rowId.enum).toEqual(['row_2']);
     expect(payload.outputSchema.properties.rows.items.properties.values.properties.ceo).toBeDefined();
-    expect(payload.outputSchema.properties.rows.items.properties.values.required).toBeUndefined();
+    expect(payload.outputSchema.properties.rows.items.properties.values.required).toEqual(['ceo']);
+    expect(payload.query).toContain('Only return citations or sources when a requested target field explicitly asks for them.');
     expect(payload.metadata.targetCells).toBe('1');
     expect(payload.metadata.overwrite).toBe('false');
   });
@@ -2097,6 +2533,284 @@ describe('Agent Fill Cells', () => {
     expect(result.success).toBe(true);
     expect(result.filled).toBe(1);
     expect(writes).toEqual([{ row: 2, col: 4, value: 'Tim Cook' }]);
+
+    SpreadsheetApp.getActiveSheet = originalGetActiveSheet;
+  });
+
+  test('writeAgentFillRunToSheet should backfill evidence URLs from grounding', () => {
+    UrlFetchApp.fetch.mockReturnValue({
+      getResponseCode: () => 200,
+      getContentText: () => JSON.stringify({
+        id: 'agent_run_fill_sources',
+        status: 'completed',
+        output: {
+          structured: {
+            rows: [{ rowId: 'row_2', values: { evidence_urls: null } }]
+          },
+          grounding: [
+            {
+              field: 'structured.rows[0].values.company_name',
+              citations: [
+                { url: 'https://example.com/company' },
+                { url: 'https://example.com/company' },
+                { url: 'https://example.com/news' }
+              ]
+            }
+          ]
+        }
+      })
+    });
+    const { sheet, writes } = createMockSheet([
+      ['Company Name', 'Evidence URLs'],
+      ['Acme', '']
+    ], 'B2');
+    const originalGetActiveSheet = SpreadsheetApp.getActiveSheet;
+    SpreadsheetApp.getActiveSheet = jest.fn(() => sheet);
+
+    const result = writeAgentFillRunToSheet('agent_run_fill_sources', {
+      overwrite: false,
+      targets: [{
+        cell: 'B2',
+        row: 2,
+        column: 2,
+        rowId: 'row_2',
+        fieldId: 'evidence_urls',
+        title: 'Evidence URLs'
+      }]
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.filled).toBe(1);
+    expect(writes).toEqual([{
+      row: 2,
+      col: 2,
+      value: 'https://example.com/company; https://example.com/news'
+    }]);
+
+    SpreadsheetApp.getActiveSheet = originalGetActiveSheet;
+  });
+
+  test('writeAgentFillRunToSheet should recognize a plural Sources header', () => {
+    UrlFetchApp.fetch.mockReturnValue({
+      getResponseCode: () => 200,
+      getContentText: () => JSON.stringify({
+        id: 'agent_run_fill_plural_sources',
+        status: 'completed',
+        output: {
+          structured: {
+            rows: [{ rowId: 'row_2', values: { sources: null } }]
+          },
+          grounding: [{
+            field: 'structured.rows[0].values.company_name',
+            citations: [
+              { url: 'https://example.com/official', title: 'Official' },
+              { url: 'https://example.com/news', title: 'News' }
+            ]
+          }]
+        }
+      })
+    });
+    const { sheet, writes } = createMockSheet([
+      ['Company Name', 'Sources'],
+      ['Acme', '']
+    ], 'B2');
+    const originalGetActiveSheet = SpreadsheetApp.getActiveSheet;
+    SpreadsheetApp.getActiveSheet = jest.fn(() => sheet);
+
+    const result = writeAgentFillRunToSheet('agent_run_fill_plural_sources', {
+      overwrite: false,
+      targets: [{
+        cell: 'B2', row: 2, column: 2, rowId: 'row_2', fieldId: 'sources', title: 'Sources'
+      }]
+    });
+
+    expect(result.success).toBe(true);
+    expect(writes).toEqual([{
+      row: 2,
+      col: 2,
+      value: 'https://example.com/official; https://example.com/news'
+    }]);
+
+    SpreadsheetApp.getActiveSheet = originalGetActiveSheet;
+  });
+
+  test('citation target formats should cover common header variants', () => {
+    expect(getAgentCitationTargetSpec({ fieldId: 'sources', title: 'Sources' }).format).toBe('url-list');
+    expect(getAgentCitationTargetSpec({ fieldId: 'source_urls', title: 'Source URL(s)' }).format).toBe('url-list');
+    expect(getAgentCitationTargetSpec({ fieldId: 'source_markdown', title: 'Sources (Markdown)' }).format).toBe('markdown');
+    expect(getAgentCitationTargetSpec({ fieldId: 'sources_json', title: 'Sources JSON' }).format).toBe('json');
+    expect(getAgentCitationTargetSpec({ fieldId: 'evidence_summary', title: 'Evidence Summary' })).toBeNull();
+  });
+
+  test('writeAgentFillRunToSheet should return one URL for a singular source URL column', () => {
+    UrlFetchApp.fetch.mockReturnValue({
+      getResponseCode: () => 200,
+      getContentText: () => JSON.stringify({
+        id: 'agent_run_fill_single_source',
+        status: 'completed',
+        output: {
+          structured: {
+            rows: [{ rowId: 'row_2', values: { primary_source_url: null } }]
+          },
+          grounding: [{
+            field: 'structured.rows[0].values.company_name',
+            citations: [
+              { url: 'https://example.com/official', title: 'Official' },
+              { url: 'https://example.com/news', title: 'News' }
+            ]
+          }]
+        }
+      })
+    });
+    const { sheet, writes } = createMockSheet([
+      ['Company Name', 'Primary Source URL'],
+      ['Acme', '']
+    ], 'B2');
+    const originalGetActiveSheet = SpreadsheetApp.getActiveSheet;
+    SpreadsheetApp.getActiveSheet = jest.fn(() => sheet);
+
+    const result = writeAgentFillRunToSheet('agent_run_fill_single_source', {
+      overwrite: false,
+      targets: [{
+        cell: 'B2', row: 2, column: 2, rowId: 'row_2', fieldId: 'primary_source_url', title: 'Primary Source URL'
+      }]
+    });
+
+    expect(result.success).toBe(true);
+    expect(writes).toEqual([{
+      row: 2,
+      col: 2,
+      value: 'https://example.com/official'
+    }]);
+
+    SpreadsheetApp.getActiveSheet = originalGetActiveSheet;
+  });
+
+  test('writeAgentFillRunToSheet should format grounding as Markdown when requested by the header', () => {
+    UrlFetchApp.fetch.mockReturnValue({
+      getResponseCode: () => 200,
+      getContentText: () => JSON.stringify({
+        id: 'agent_run_fill_markdown_sources',
+        status: 'completed',
+        output: {
+          structured: {
+            rows: [{ rowId: 'row_2', values: { sources_markdown: null } }]
+          },
+          grounding: [{
+            field: 'structured.rows[0].values.company_name',
+            citations: [
+              { url: 'https://example.com/official', title: 'Official profile' },
+              { url: 'https://example.com/news', title: 'News article' }
+            ]
+          }]
+        }
+      })
+    });
+    const { sheet, writes } = createMockSheet([
+      ['Company Name', 'Sources (Markdown)'],
+      ['Acme', '']
+    ], 'B2');
+    const originalGetActiveSheet = SpreadsheetApp.getActiveSheet;
+    SpreadsheetApp.getActiveSheet = jest.fn(() => sheet);
+
+    const result = writeAgentFillRunToSheet('agent_run_fill_markdown_sources', {
+      overwrite: false,
+      targets: [{
+        cell: 'B2', row: 2, column: 2, rowId: 'row_2', fieldId: 'sources_markdown', title: 'Sources (Markdown)'
+      }]
+    });
+
+    expect(result.success).toBe(true);
+    expect(writes).toEqual([{
+      row: 2,
+      col: 2,
+      value: '[Official profile](https://example.com/official); [News article](https://example.com/news)'
+    }]);
+
+    SpreadsheetApp.getActiveSheet = originalGetActiveSheet;
+  });
+
+  test('writeAgentFillRunToSheet should not put source URLs into an evidence summary column', () => {
+    UrlFetchApp.fetch.mockReturnValue({
+      getResponseCode: () => 200,
+      getContentText: () => JSON.stringify({
+        id: 'agent_run_fill_evidence_summary',
+        status: 'completed',
+        output: {
+          structured: {
+            rows: [{ rowId: 'row_2', values: { evidence_summary: null } }]
+          },
+          grounding: [{
+            field: 'structured.rows[0].values.company_name',
+            citations: [{ url: 'https://example.com/official', title: 'Official' }]
+          }]
+        }
+      })
+    });
+    const { sheet, writes } = createMockSheet([
+      ['Company Name', 'Evidence Summary'],
+      ['Acme', '']
+    ], 'B2');
+    const originalGetActiveSheet = SpreadsheetApp.getActiveSheet;
+    SpreadsheetApp.getActiveSheet = jest.fn(() => sheet);
+
+    const result = writeAgentFillRunToSheet('agent_run_fill_evidence_summary', {
+      overwrite: false,
+      targets: [{
+        cell: 'B2', row: 2, column: 2, rowId: 'row_2', fieldId: 'evidence_summary', title: 'Evidence Summary'
+      }]
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.blank).toBe(1);
+    expect(writes).toEqual([]);
+
+    SpreadsheetApp.getActiveSheet = originalGetActiveSheet;
+  });
+
+  test('writeAgentFillRunToSheet should separate returned evidence URL arrays with semicolons', () => {
+    UrlFetchApp.fetch.mockReturnValue({
+      getResponseCode: () => 200,
+      getContentText: () => JSON.stringify({
+        id: 'agent_run_fill_source_array',
+        status: 'completed',
+        output: {
+          structured: {
+            rows: [{
+              rowId: 'row_2',
+              values: {
+                evidence_urls: ['https://example.com/one', 'https://example.com/two']
+              }
+            }]
+          }
+        }
+      })
+    });
+    const { sheet, writes } = createMockSheet([
+      ['Company Name', 'Evidence URLs'],
+      ['Acme', '']
+    ], 'B2');
+    const originalGetActiveSheet = SpreadsheetApp.getActiveSheet;
+    SpreadsheetApp.getActiveSheet = jest.fn(() => sheet);
+
+    const result = writeAgentFillRunToSheet('agent_run_fill_source_array', {
+      overwrite: false,
+      targets: [{
+        cell: 'B2',
+        row: 2,
+        column: 2,
+        rowId: 'row_2',
+        fieldId: 'evidence_urls',
+        title: 'Evidence URLs'
+      }]
+    });
+
+    expect(result.success).toBe(true);
+    expect(writes).toEqual([{
+      row: 2,
+      col: 2,
+      value: 'https://example.com/one; https://example.com/two'
+    }]);
 
     SpreadsheetApp.getActiveSheet = originalGetActiveSheet;
   });
